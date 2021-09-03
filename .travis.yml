@@ -8,4 +8,4 @@ install:
   - conda config --set always_yes yes --set changeps1 no
   - conda update -q conda
 after_success:
-  - test $TRAVIS_BRANCH = "master" && conda install conda-build && conda install anaconda-client && bash conda/conda_upload.sh
+  - test $TRAVIS_BRANCH = "main" && conda install conda-build && conda install anaconda-client && bash conda/conda_upload.sh

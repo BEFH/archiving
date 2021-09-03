@@ -15,7 +15,7 @@ requirements:
 
   run:
     - python
-    - 
+    - pytz 
     - pandas
 
 build:

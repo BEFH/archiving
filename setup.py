@@ -30,6 +30,6 @@ setup(
     ],
     install_requires=['pytz','pandas'],
     entry_points={
-        'console_scripts': ['archive_goate=archive_minerva:main'],
+        'console_scripts': ['archive_goate=archive_goate:main'],
     },
 )

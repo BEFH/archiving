@@ -15,7 +15,7 @@ setup(
     author_email='brian.fulton-howard@mssm.edu',
     license='MIT',
     keywords='archive Linux TSM dsmc tar',
-    py_modules=['archive_minerva'],
+    py_modules=['archive_goate'],
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Science/Research',

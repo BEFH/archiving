@@ -2,14 +2,14 @@ from setuptools import setup, find_packages
 
 setup(
     name='archive_goate',
-    version='1.0b1',
+    version='1.0b2',
     description='Automatic backup script for goate lab.',
     long_description=('Using DSMC to back up files is somewhat compled and\n'
                       'it\'s difficult to track what files and directories\n'
                       'have been archived in the lab. This script automates\n'
                       'the process of archiving, stores information about the\n'
                       'archive, and stores info across users for the entire\n'
-                      'lab.')
+                      'lab.'),
     url='https://github.com/BEFH/archiving',
     author='Brian Fulton-Howard',
     author_email='brian.fulton-howard@mssm.edu',

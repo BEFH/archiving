@@ -3,16 +3,26 @@ name: publish_conda
 on:
   release:
     types: [published]
+  push:
+    branches: [ master ]
+    tags:
+      - '**'
+  pull_request:
+    branches: [ master ]
 
 jobs:
   publish:
     name: Publish package to anaconda
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v1
     - name: publish-to-conda
-      uses: fcakyon/conda-publish-action@v1.3
+      uses: paskino/conda-package-publish-action@master
       with:
-        subdir: 'conda'
-        anacondatoken: ${{ secrets.ANACONDA_TOKEN }}
-        platforms: 'linux'
+        subDir: 'conda'
+        channels: 'conda-forge'
+        AnacondaToken: ${{ secrets.ANACONDA_TOKEN }}
+                publish: ${{ github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags') }}
+        test_all: ${{(github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')) || (github.ref == 'refs/heads/master')}}
+        convert_win: false
+        convert_osx: false

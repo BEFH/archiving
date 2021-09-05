@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 1.0
+# Archiving script Version 1.0r1
 
 # stdlib
 import os
@@ -515,7 +515,7 @@ def logprint(message):
         print('\n{}\n'.format(message), file=logfile)
 
 
-if __name__ == '__main__':
+def main():
     logging.basicConfig(
         filename='archive.log', level=logging.INFO,
         format='%(asctime)s %(levelname)s: %(message)s',
@@ -550,3 +550,7 @@ if __name__ == '__main__':
     else:
         logging.info('Exited without archiving')
         exit(0)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 1.0r1
+# Archiving script Version 1.1
 
 # stdlib
 import os
@@ -382,7 +382,7 @@ def file_rm(files, archive_info, sizes, log_sz):
                 files.loc[files['path'] == file, 'removal'] = 'fail: miss'
         files.loc[files['keep'] != 'no', 'removal'] = 'kept'
     else:
-        logging.info('Not keeping small files'.format(kept))
+        logging.info('Not keeping small files'.format(sizes['kept']))
         archive_info['freed_mib'] = sizes['total']
         archive_info['kept_mib'] = 0
         for file in files['path']:
@@ -414,7 +414,11 @@ def delete_files(files, archive_info, sizes, log_sz):
                 files['removal'] = 'fail: other'
                 archive_info['freed_mib'] = 0
                 archive_info['kept_mib'] = sizes['total']
+                archive_info['removal_failure'] = 'yes'
             else:
+                archive_info['removal_failure'] = 'yes'
+                with open('info_dump.p', 'wb') as pklh:
+                    pickle.dump(archive_info, pklh)
                 raise
     else:
         logging.info('Not removing files')
@@ -433,7 +437,7 @@ def delete_files(files, archive_info, sizes, log_sz):
     return files, archive_info
 
 
-def tsm_archive(temp_tarball, archive_info):
+def tsm_archive(temp_tarball, archive_info, files=None, attempt=1):
     archive_name = archive_info['archive_name']
     shutil.copy(temp_tarball, archive_name)
     os.remove(temp_tarball)
@@ -449,13 +453,20 @@ def tsm_archive(temp_tarball, archive_info):
     try:
         dsmc_job.check_returncode()
     except:
-        with open('archive_dump.p', 'wb') as pklh:
-            pickle.dump(files, pklh)
-        with open('info_dump.p', 'wb') as pklh:
-            pickle.dump(archive_info, pklh)
-        logging.exception('Uncaught exception archiving files')
-        print("Unexpected error archiving files:", sys.exc_info()[0])
-        raise
+        if attempt < 4 and question('Archiving failed with {}. Try again?'.format, False):
+            tsm_archive(temp_tarball, archive_info, files, attempt + 1)
+        else:
+            if files is not None:
+                with open('archive_dump.p', 'wb') as pklh:
+                    pickle.dump(files, pklh)
+            archive_info['exception'] = 'archiving'
+            with open('info_dump.p', 'wb') as pklh:
+                pickle.dump(archive_info, pklh)
+            logging.exception('Uncaught exception archiving files')
+            logging.exception('Please contact Brian to continue the archiving.')
+            print("Unexpected error archiving files:", sys.exc_info()[0])
+            print("\033[1m\033[91mContact Brian to finish archiving!\033[0m")
+            raise
     else:
         logging.info('DSMC Job successful')
         os.remove(archive_name)
@@ -463,6 +474,8 @@ def tsm_archive(temp_tarball, archive_info):
 
 def write_database(dbpath, files, archive_info):
     try:
+        if 'removal_failure' in archive_info:
+            del archive_info['removal_failure']
         logging.info('Writing to lab archive DB')
         engine = sqlite3.connect(dbpath)
         files.to_sql('file', con=engine, if_exists="append", index=False)
@@ -472,6 +485,7 @@ def write_database(dbpath, files, archive_info):
     except:
         with open('archive_dump.p', 'wb') as pklh:
             pickle.dump(files, pklh)
+        archive_info['exception'] = 'db'
         with open('info_dump.p', 'wb') as pklh:
             pickle.dump(archive_info, pklh)
         logging.exception('Exception writing to lab DB')
@@ -500,6 +514,7 @@ Total original size (MiB): {total_mib}
     except:
         with open('archive_dump.p', 'wb') as pklh:
             pickle.dump(files, pklh)
+        archive_info['exception'] = 'tables'
         with open('info_dump.p', 'wb') as pklh:
             pickle.dump(archive_info, pklh)
         logging.exception('Exception writing text tables to directory')
@@ -527,7 +542,7 @@ def main():
     settings = load_config('archive.yaml')
 
     print('Scanning for files')
-    logging.info('Archiving script v1.0')
+    logging.info('Archiving script v1.1')
     logging.info('Scanning directory for files')
     files = list_files(settings)
     logging.info('Done scanning directory for files')
@@ -541,11 +556,15 @@ def main():
     if question('Archive this folder:\n{}?'.format(os.getcwd())):
         archive_info, temp_tarball = make_tarball(files, sizes['total'])
         files, archive_info = delete_files(files, archive_info, sizes, log_sz)
-        tsm_archive(temp_tarball, archive_info)
+        tsm_archive(temp_tarball, archive_info, files)
         database = '/sc/arion/projects/LOAD/archive/archive.sqlite'
         write_database(database, files, archive_info)
         write_tables(files, archive_info)
         logging.info('Done')
+        if 'removal_failure' in archive_info:
+            with open('info_dump.p', 'wb') as pklh:
+                pickle.dump(archive_info, pklh)
+            exit(1)
         exit(0)
     else:
         logging.info('Exited without archiving')

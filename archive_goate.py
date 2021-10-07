@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 1.1
+# Archiving script Version 1.1.1
 
 # stdlib
 import os
@@ -25,6 +25,8 @@ from itertools import compress
 import pytz
 import pandas as pd
 
+
+logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -296,10 +298,10 @@ def get_sizes(files):
     print('''If you choose to keep small files, you will free at least {} MiB
       leaving at most {} MiB.'''.format(int(freed), int(kept)))
 
-    logging = 'File usage by type:\n\n{}'.format(kinds)
+    logging_usage = 'File usage by type:\n\n{}'.format(kinds)
 
     sizes = {'total': total, 'freed': freed, 'kept': kept}
-    return logging, sizes
+    return logging_usage, sizes
 
 
 def make_tarball(files, total):
@@ -314,6 +316,7 @@ def make_tarball(files, total):
     files['file_id'] = [filehash(x, dt_iso) for x in files['path']]
     files['archive_id'] = hash_dtd
     tarball = '{dirname}_{date}.tar.bz2'.format(dirname=cwd, date=date)
+    username = getpass.getuser()
 
     archive_info = {
         'archive_id': hash_dtd,
@@ -402,6 +405,8 @@ def file_rm(files, archive_info, sizes, log_sz):
 
 
 def delete_files(files, archive_info, sizes, log_sz):
+    idx = files[files['filename'] == 'archive_{}.log'.format(logtime)].index
+    files.drop(idx, inplace=True)
     if question('Do you want to remove files after generating archive', False):
         try:
             files, archive_info = file_rm(files, archive_info, sizes, log_sz)
@@ -443,7 +448,7 @@ def tsm_archive(temp_tarball, archive_info, files=None, attempt=1):
     os.remove(temp_tarball)
     logging.info('DSMC Job starting')
     print('DSMC Job starting')
-    dsmc_cmd = 'dsmc archive -se={} "{}"'.format(username, archive_name)
+    dsmc_cmd = 'dsmc archive -se={} "{}"'.format(archive_info['user_name'], archive_name)
     dsmc_job = subprocess.run(dsmc_cmd, capture_output=True, shell=True)
     print(dsmc_job.stdout.decode())
     print(dsmc_job.stderr.decode())
@@ -497,8 +502,9 @@ def write_database(dbpath, files, archive_info):
 
 def write_tables(files, archive_info):
     try:
+        fname = 'archived_file-list_{}.tsv.gz'.format(logtime)
         logging.info('Writing text tables to directory')
-        files.to_csv('archived_file-list.tsv.gz', sep='\t', index=False)
+        files.to_csv(fname, sep='\t', index=False)
         archive_info = '''
 Archive ID: {archive_id},
 Username: {user_name},
@@ -509,7 +515,7 @@ Total original size (MiB): {total_mib}
 '''.format(**archive_info)
         print(archive_info)
         logprint(archive_info)
-        with open('archive_info.log', 'w') as ai:
+        with open('archive_info_{}.log'.format(logtime), 'w') as ai:
             print(archive_info, file=ai)
     except:
         with open('archive_dump.p', 'wb') as pklh:
@@ -526,23 +532,22 @@ Total original size (MiB): {total_mib}
 
 
 def logprint(message):
-    with open('archive.log', 'a') as logfile:
+    with open('archive_{}.log'.format(logtime), 'a') as logfile:
         print('\n{}\n'.format(message), file=logfile)
 
 
 def main():
     logging.basicConfig(
-        filename='archive.log', level=logging.INFO,
+        filename='archive_{}.log'.format(logtime), level=logging.INFO,
         format='%(asctime)s %(levelname)s: %(message)s',
-        datefmt='%m/%d/%Y %I:%M:%S %p')
+        datefmt='%m/%d/%Y %H:%M:%S')
 
     check_tmux()
 
-    username = getpass.getuser()
     settings = load_config('archive.yaml')
 
     print('Scanning for files')
-    logging.info('Archiving script v1.1')
+    logging.info('Archiving script v1.1.1')
     logging.info('Scanning directory for files')
     files = list_files(settings)
     logging.info('Done scanning directory for files')

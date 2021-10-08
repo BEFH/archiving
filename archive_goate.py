@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 1.1.1
+# Archiving script Version 1.1.2
 
 # stdlib
 import os
@@ -49,96 +49,119 @@ def get_type(ext, size, settings):
     return kind
 
 
-def getinfo(entry, settings):
+def getinfo_dir(entry):
     keep = 'unknown'
     path = entry.path
-    if entry.is_dir():
-        ext = 'directory'
-        directory = True
-        if entry.name == '.git':
-            stats = entry.stat()
-            mode = stats.st_mode
-            size_mib = stats.st_size / 1048576 if not entry.is_symlink() else 0
-            keep = 'git'
-            kind = 'gitdir'
-            modified = None
-            created = None
-            user = None
-            group = None
-        elif entry.is_symlink():
-            return None
-        else:
-            keep = 'directory'
-            kind = 'directory'
-            size_mib = -9
-            mode = -9
-            modified = None
-            created = None
-            user = None
-            group = None
+    ext = 'directory'
+    directory = True
+    if entry.name == '.git':
+        stats = entry.stat()
+        mode = stats.st_mode
+        size_mib = stats.st_size / 1048576 if not entry.is_symlink() else 0
+        keep = 'git'
+        kind = 'gitdir'
+        modified = None
+        created = None
+        user = None
+        group = None
+    elif entry.is_symlink():
+        return None
     else:
-        if entry.name == 'Snakefile':
-            ext = '.smk'
-        elif entry.name == '.gitignore':
-            ext = '.gitignore'
-        else:
-            ext = os.path.splitext(entry.name)[1]
-
-        directory = False
-        pathparts = pathlib.Path(path).parts
-        pardir = '.' if len(pathparts) == 1 else pathparts[-2]
-
-        if entry.is_symlink() and not os.path.exists(path):
-            kind = 'broken_link'
-            keep = 'no'
-            size_mib = 0
-            mode = None
-            modified = None
-            created = None
-            user = None
-            group = None
-        elif not os.path.exists(path):
-            kind = 'fs_err'
-            keep = 'yes'
-            size_mib = 0
-            mode = None
-            modified = None
-            created = None
-            user = None
-            group = None
-        else:
-            stats = entry.stat()
-            mode = stats.st_mode
-            size_mib = stats.st_size / 1048576 if not entry.is_symlink() else 0
-            modified = stats.st_mtime
-            created = stats.st_ctime
-            user = stats.st_uid
-            group = stats.st_gid
-            if '.snakemake' in pathparts:
-                if pardir == 'log':
-                    keep = 'snakemake_log' if pardir == 'log' else 'no'
-                    kind = 'log'
-                else:
-                    keep = 'no'
-                    kind = 'other'
-            elif pardir == '.snakejob':
-                keep = 'snakejob_log'
-                kind = 'log'
-            elif '.git' in pathparts or ext == '.gitignore':
-                keep = 'git_file'
-                kind = 'gitfile'
-            else:
-                kind = get_type(ext, size_mib, settings)
-                if kind == 'other' and size_mib > 0:
-                    keep = 'no'
-                elif size_mib == 0:
-                    keep = 'empty'
-                else:
-                    keep = kind
+        keep = 'directory'
+        kind = 'directory'
+        size_mib = -9
+        mode = -9
+        modified = None
+        created = None
+        user = None
+        group = None
     return {'size_mib': size_mib, 'mode': mode, 'path': path, 'keep': keep,
             'filename': entry.name, 'extension': ext, 'kind': kind,
             'directory': directory, 'time_modified': modified, 'user': user,
             'group': group}
+
+
+def getinfo_file(entry, settings):
+    path = entry.path
+    keep = 'unknown'
+
+    if entry.name == 'Snakefile':
+        ext = '.smk'
+    elif entry.name == '.gitignore':
+        ext = '.gitignore'
+    else:
+        ext = os.path.splitext(entry.name)[1]
+
+    directory = False
+    pathparts = pathlib.Path(path).parts
+    pardir = '.' if len(pathparts) == 1 else pathparts[-2]
+
+    if entry.is_symlink() and not os.path.exists(path):
+        kind = 'broken_link'
+        keep = 'no'
+        size_mib = 0
+        mode = None
+        modified = None
+        created = None
+        user = None
+        group = None
+    elif not os.path.exists(path):
+        kind = 'fs_err'
+        keep = 'yes'
+        size_mib = 0
+        mode = None
+        modified = None
+        created = None
+        user = None
+        group = None
+    else:
+        stats = entry.stat()
+        mode = stats.st_mode
+        size_mib = stats.st_size / 1048576 if not entry.is_symlink() else 0
+        modified = stats.st_mtime
+        created = stats.st_ctime
+        user = stats.st_uid
+        group = stats.st_gid
+        if '.snakemake' in pathparts:
+            if pardir == 'log':
+                keep = 'snakemake_log' if pardir == 'log' else 'no'
+                kind = 'log'
+            else:
+                keep = 'no'
+                kind = 'other'
+        elif pardir == '.snakejob':
+            keep = 'snakejob_log'
+            kind = 'log'
+        elif '.git' in pathparts or ext == '.gitignore':
+            keep = 'git_file'
+            kind = 'gitfile'
+        else:
+            kind = get_type(ext, size_mib, settings)
+            if kind == 'other' and size_mib > 0:
+                keep = 'no'
+            elif size_mib == 0:
+                keep = 'empty'
+            else:
+                keep = kind
+    return {'size_mib': size_mib, 'mode': mode, 'path': path, 'keep': keep,
+            'filename': entry.name, 'extension': ext, 'kind': kind,
+            'directory': directory, 'time_modified': modified, 'user': user,
+            'group': group}
+
+
+def getinfo(entry, settings):
+    try:
+        if entry.is_dir():
+            return getinfo_dir(entry)
+        else:
+            return getinfo_file(entry, settings)
+    except PermissionError:
+        if not entry.is_symlink():
+            raise
+        return {'size_mib': 0, 'mode': None, 'path': entry.path, 'keep': 'no',
+                'filename': entry.name, 'extension': None, 'group': None,
+                'kind': 'forbidden_link', 'directory': None, 'user': None,
+                'time_modified': None}
 
 
 def git_test(gitdir):
@@ -547,7 +570,7 @@ def main():
     settings = load_config('archive.yaml')
 
     print('Scanning for files')
-    logging.info('Archiving script v1.1.1')
+    logging.info('Archiving script v1.1.2')
     logging.info('Scanning directory for files')
     files = list_files(settings)
     logging.info('Done scanning directory for files')

@@ -327,6 +327,23 @@ def get_sizes(files):
     return logging_usage, sizes
 
 
+def test_tar():
+    '''
+    Test to see if the available tar is new enough to suport multithreading
+    and ACLs.
+    '''
+    output = subprocess.run(['tar', '--version'],
+                            capture_output=True).stdout
+    vs = output.splitlines()[0].decode()
+    pat = r'(\d+)\.([0-9.]+)$'
+    ver = {}
+    ver['maj'], ver['min'] = re.search(pat, vs).groups()
+    ver = {x : float(y) for x, y in ver.items()}
+    if ver['maj'] > 1 or ver['min'] > 28:
+        return True
+    return False
+
+
 def make_tarball(files, total):
     fullpath = os.path.normpath(os.getcwd())
     parent = os.path.dirname(fullpath)
@@ -356,9 +373,41 @@ def make_tarball(files, total):
     tempdir = '/sc/arion/scratch/{}/archiving'.format(username)
     temp_tarball = '{}/{}'.format(tempdir, tarball)
     tar_cmd = 'tar -cvpjf {} -C {} {}'.format(temp_tarball, parent, cwd)
-    job_cmd = ('bsub -P acc_LOAD -q premium -n 1 -R rusage[mem=16000] '
-               + '''-W 100:00 -oo {} -eo {} '{}' ''')
-    job_cmd = job_cmd.format(oo, eo, tar_cmd)
+    tar_cmd_fast = 'tar c -I"pbzip2 -p24" -f {} -C {} --xattrs --acls {}'
+    tar_cmd_fast = tar_cmd_fast.format(temp_tarball, parent, cwd)
+
+    try:
+        not_used = subprocess.run(["pbzip2", "-h"], capture_output=True)
+    except FileNotFoundError:
+        pbgzip = False
+    else:
+        pbzip = True
+        
+    newtar = test_tar()
+
+    ncore = 1
+    if newtar and pbzip:
+        logging.info("Using pbzip2 to compress in parallel. ACLs and XATTRs recorded.")
+        tar_cmd = tar_cmd_fast
+        ncore = 24
+    elif pbzip:
+        print("Tar is older than v1.28, so multithreading and ACLs are unsupported.")
+        print("Use 'mamba install -c conda-forge tar' to enable features.")
+        logging.warning("Tar is older than 1.28. Using serial compression and no ACLs")
+    elif newtar:
+        print("Parallel bzip2 missing. Archiving will be slow unless you install")
+        print("pbzip2. Use 'mamba install -c conda-forge pbzip2' to enable.")
+        logging.warning("pbzip2 is missing. Using slow serial compression.")
+    else:
+        print("Parallel bzip2 missing and tar is older than v1.28 so multithreading")
+        print("and ACLs are unsupported.")
+        print("Use 'mamba install -c conda-forge pbzip2 tar' to enable features.")
+        logging.warning("pbzip2 is missing and tar is older than 1.28.")
+        logging.warning("Using slow serial compression and no ACLs.")
+
+    job_cmd = ('bsub -P acc_LOAD -q premium -n {} -R rusage[mem=1000] '
+               + '''-R span[hosts=1] -W 140:00 -oo {} -eo {} '{}' ''')
+    job_cmd = job_cmd.format(ncore, oo, eo, tar_cmd)
     # -c create
     # -v verbose
     # -p preserve permissions

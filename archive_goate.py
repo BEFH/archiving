@@ -456,6 +456,7 @@ def delete_files(files, archive_info, sizes, log_sz):
         logging.info('Not removing files')
         archive_info['freed_mib'] = 0
         archive_info['kept_mib'] = sizes['total']
+        files['removal'] = 'kept'
     removed = files.loc[files['removal'] == 'success', 'size_mib'].sum()
     removed = removed.round()
     discrep = sizes['freed'].round() - removed

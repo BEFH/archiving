@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 1.1.2
+# Archiving script Version 2.0
 
 # stdlib
 import os
@@ -624,7 +624,7 @@ def main():
     settings = load_config('archive.yaml')
 
     print('Scanning for files')
-    logging.info('Archiving script v1.1.2')
+    logging.info('Archiving script v2.0')
     logging.info('Scanning directory for files')
     files = list_files(settings)
     logging.info('Done scanning directory for files')

@@ -16,6 +16,8 @@ requirements:
     - python
     - pytz
     - pandas
+    - tar >=1.28
+    - pbzip2
 
 build:
   number: 0

@@ -459,7 +459,7 @@ def delete_files(files, archive_info, sizes, log_sz):
         files['removal'] = 'kept'
     removed = files.loc[files['removal'] == 'success', 'size_mib'].sum()
     removed = removed.round()
-    discrep = sizes['freed'].round() - removed
+    discrep = archive_info['freed_mib'].round() - removed
     removed = 'Removed {} MiB of files.'.format(int(removed))
     print(removed)
     logging.info(removed)

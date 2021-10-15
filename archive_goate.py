@@ -402,10 +402,14 @@ def file_rm(files, archive_info, sizes, log_sz):
             try:
                 os.remove(file)
                 files.loc[files['path'] == file, 'removal'] = 'success'
+            except IsADirectoryError:
+                files.loc[files['path'] == file, 'removal'] = 'fail: dir'
             except PermissionError:
                 files.loc[files['path'] == file, 'removal'] = 'fail: perm'
             except FileNotFoundError:
                 files.loc[files['path'] == file, 'removal'] = 'fail: miss'
+            except OSError:
+                files.loc[files['path'] == file, 'removal'] = 'fail: OS'
         files.loc[files['keep'] != 'no', 'removal'] = 'kept'
     else:
         logging.info('Not keeping small files'.format(sizes['kept']))

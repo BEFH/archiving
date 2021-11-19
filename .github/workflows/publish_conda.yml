@@ -18,7 +18,7 @@ jobs:
         subDir: 'conda'
         channels: 'conda-forge'
         AnacondaToken: ${{ secrets.ANACONDA_TOKEN }}
-        publish: ${{ github.event_name == 'release' && startsWith(github.event.ref, 'refs/tags') }}
-        test_all: ${{(github.event_name == 'release' && startsWith(github.event.ref, 'refs/tags')) || (github.ref == 'refs/heads/master')}}
+        publish: true
+        test_all: false
         convert_win: false
         convert_osx: false

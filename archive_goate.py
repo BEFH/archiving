@@ -28,6 +28,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
+
 def get_type(ext, size, settings):
     types = settings['types']
     sizes = settings['sizes']
@@ -344,6 +345,15 @@ def test_tar():
     return False
 
 
+def exit_code(logname):
+    with open(logname, 'r') as f:
+        for line in f.readlines():
+            ecodematch = re.search(r'Exited with exit code (\d+)\.', line)
+            if ecodematch:
+                return int(ecodematch.groups()[0])
+    return 0
+
+
 def make_tarball(files, total):
     fullpath = os.path.normpath(os.getcwd())
     parent = os.path.dirname(fullpath)
@@ -382,7 +392,7 @@ def make_tarball(files, total):
         pbgzip = False
     else:
         pbzip = True
-        
+
     newtar = test_tar()
 
     ncore = 1
@@ -415,19 +425,66 @@ def make_tarball(files, total):
     # -f tarball file name
     tempdir_path = pathlib.Path(tempdir)
     pathlib.Path.mkdir(tempdir_path, parents=True, exist_ok=True)
-    archive_job = subprocess.run(job_cmd, capture_output=True, shell=True)
-    print(archive_job.stdout.decode())
-    print(archive_job.stderr.decode())
-    archive_job.check_returncode()
-    job_expression = r'(?<=^Job <)\d+(?=> is submitted to queue)'
-    job = re.search(job_expression, archive_job.stdout.decode())[0]
-    completed = False
-    while not completed:
-        time.sleep(10)
-        jobstat = subprocess.run('bjobs -do "stat" -noheader {}'.format(job),
-                                 capture_output=True, shell=True)
-        completed = jobstat.stdout.decode().strip() not in ['RUN', 'PEND']
-    assert jobstat != 'EXIT', "ERROR: Archiving failed!"
+    tar_incomplete = True
+    tar_attempt = 1
+
+    while tar_incomplete and tar_attempt < 4:
+        archive_job = subprocess.run(job_cmd, capture_output=True, shell=True)
+        print(archive_job.stdout.decode())
+        print(archive_job.stderr.decode())
+        archive_job.check_returncode()
+        job_expression = r'(?<=^Job <)\d+(?=> is submitted to queue)'
+        job = re.search(job_expression, archive_job.stdout.decode())[0]
+        completed = False
+        while not completed:
+            time.sleep(10)
+            jobstat = subprocess.run(
+                'bjobs -do "stat" -noheader {}'.format(job),
+                capture_output=True, shell=True)
+            completed = jobstat.stdout.decode().strip() not in ['RUN', 'PEND']
+        tar_code = exit_code(oo)
+        if jobstat != 'EXIT' and tar_code == 0:
+            tar_incomplete = False
+            break
+        elif jobstat == 'EXIT':
+            logging.warning(
+                'LSF archive job failed on attempt {}'.format(tar_attempt))
+            print('LSF archive job failed on attempt {}'.format(tar_attempt))
+            if tar_attempt < 3:
+                print('Trying again up to {} times'.format(3 - tar_attempt))
+            else:
+                logging.error('Aborting because LSF tar job failed.')
+                raise Exception('Aborting because LSF tar job failed.')
+            tar_attempt += 1
+        else:
+            logging.warning(
+                'tar exited with exit code {} on attempt {}'.format(
+                    tar_code, tar_attempt))
+            print('tar exited with exit code {} on attempt {}'.format(
+                    tar_code, tar_attempt))
+            if tar_code == 1:
+                print('The following files were unsuccessful:')
+                with open(eo, 'r') as f:
+                    print(f.read(), end='\n')
+                print('You can choose to try again, to use this archive,'
+                      + '\n or to abort all operations.')
+                if tar_attempt == 3 or not question('Try again?', True):
+                    if question('Continue with incomplete archive?'):
+                        logging.warning('Continuing with incomplete archive.')
+                        print('WARNING: Continuing with incomplete archive.')
+                        break
+                    else:
+                        logging.error('Aborting because tar is incomplete.')
+                        os.remove(temp_tarball)
+                        raise Exception('Aborting because tar is incomplete.')
+            else:
+                print('Archiving failed. You can choose to try again'
+                      + '\n or to abort all operations.')
+                retry = tar_attempt < 3 and question('Try again?', True)
+                if not retry:
+                    logging.error('Aborting because tar failed.')
+                    raise Exception('Aborting because tar failed.')
+            tar_attempt += 1
     return archive_info, temp_tarball
 
 

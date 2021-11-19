@@ -3,22 +3,17 @@ name: publish_conda
 on:
   release:
     types: [published]
-    tags:
-      - '**'
-
+    
 jobs:
   publish:
-    name: Publish package to anaconda
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v1
     - name: publish-to-conda
-      uses: paskino/conda-package-publish-action@master
+      uses: MichaelsJP/conda-package-publish-action@v1.0.0
       with:
         subDir: 'conda'
-        channels: 'conda-forge'
         AnacondaToken: ${{ secrets.ANACONDA_TOKEN }}
-        publish: ${{ github.event_name == 'release' && startsWith(github.event.ref, 'refs/tags') }}
-        test_all: ${{(github.event_name == 'release' && startsWith(github.event.ref, 'refs/tags')) || (github.ref == 'refs/heads/master')}}
-        convert_win: false
-        convert_osx: false
+        platforms: 'all'
+        override: true
+        dry_run: false

@@ -30,7 +30,7 @@ test:
     - archive_goate
 
 about:
-  home: https://github.com/BEFH/flippyr
+  home: https://github.com/BEFH/archiving
   license: MIT
   license_family: MIT
   license_file: LICENSE

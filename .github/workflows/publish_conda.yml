@@ -3,12 +3,6 @@ name: publish_conda
 on:
   release:
     types: [published]
-  push:
-    branches: [ master ]
-    tags:
-      - '**'
-  pull_request:
-    branches: [ master ]
 
 jobs:
   publish:

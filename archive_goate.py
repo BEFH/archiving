@@ -19,7 +19,7 @@ import pwd
 import grp
 import shutil
 import logging
-from itertools import compress
+from itertools import compress, cycle
 
 # packages
 import pytz
@@ -436,12 +436,25 @@ def make_tarball(files, total):
         job_expression = r'(?<=^Job <)\d+(?=> is submitted to queue)'
         job = re.search(job_expression, archive_job.stdout.decode())[0]
         completed = False
+        spinner = cycle(['-', '/', '|', '\\'])
+        print("Waiting to check job.", end='\r')
         while not completed:
-            time.sleep(10)
+            time.sleep(5)
             jobstat = subprocess.run(
                 'bjobs -do "stat" -noheader {}'.format(job),
                 capture_output=True, shell=True)
-            completed = jobstat.stdout.decode().strip() not in ['RUN', 'PEND']
+            jobstat = jobstat.stdout.decode().strip()
+            if jobstat == 'PEND':
+                statmsg = "Tar job is pending... {}".format(next(spinner))
+                print(statmsg, end='\r')
+            elif jobstat == 'PEND':
+                statmsg = "Tar job is running... {}".format(next(spinner))
+                print(statmsg, end='\r')
+            else:
+                statmsg = "Tar job has completed.   "
+                print(statmsg, end='\n')
+            completed = jobstat not in ['RUN', 'PEND']
+
         tar_code = exit_code(oo)
         if jobstat != 'EXIT' and tar_code == 0:
             tar_incomplete = False
@@ -558,14 +571,15 @@ def delete_files(files, archive_info, sizes, log_sz):
                 with open('info_dump.p', 'wb') as pklh:
                     pickle.dump(archive_info, pklh)
                 raise
+        removed = files.loc[files['removal'] == 'success', 'size_mib'].sum()
+        removed = removed.round()
     else:
         logging.info('Not removing files')
         archive_info['freed_mib'] = 0
         archive_info['kept_mib'] = sizes['total']
         files['removal'] = 'kept'
-    removed = files.loc[files['removal'] == 'success', 'size_mib'].sum()
-    removed = removed.round()
-    discrep = archive_info['freed_mib'].round() - removed
+        removed = 0
+    discrep = round(archive_info['freed_mib']) - removed
     removed = 'Removed {} MiB of files.'.format(int(removed))
     print(removed)
     logging.info(removed)
@@ -578,21 +592,25 @@ def delete_files(files, archive_info, sizes, log_sz):
 
 def tsm_archive(temp_tarball, archive_info, files=None, attempt=1):
     archive_name = archive_info['archive_name']
+    logging.info('Moving archive tarball')
+    print('Moving archive tarball')
     shutil.copy(temp_tarball, archive_name)
     os.remove(temp_tarball)
     logging.info('DSMC Job starting')
     print('DSMC Job starting')
-    dsmc_cmd = 'dsmc archive -se={} "{}"'.format(archive_info['user_name'], archive_name)
-    dsmc_job = subprocess.run(dsmc_cmd, capture_output=True, shell=True)
-    print(dsmc_job.stdout.decode())
-    print(dsmc_job.stderr.decode())
+    dsmc_cmd = [shutil.which('dsmc'), 'archive',
+                '-se={}'.format(archive_info['user_name']),
+                '"{}"'.format(archive_name)]
+    with subprocess.Popen(dsmc_cmd, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT,
+                          bufsize=1, universal_newlines=True,
+                          ) as dsmc_job:
+        for line in dsmc_job.stdout:
+            print(line, end='')
+            logprint(line.strip())
     logging.info('DSMC Job completed')
-    logprint(dsmc_job.stdout.decode())
-    logprint(dsmc_job.stderr.decode())
-    try:
-        dsmc_job.check_returncode()
-    except:
-        if attempt < 4 and question('Archiving failed with {}. Try again?'.format, False):
+    if dsmc_job.returncode != 0:
+        if attempt < 4 and question('Archiving failed with {}. Try again?'.format(dsmc_job.returncode), False):
             tsm_archive(temp_tarball, archive_info, files, attempt + 1)
         else:
             if files is not None:
@@ -605,7 +623,7 @@ def tsm_archive(temp_tarball, archive_info, files=None, attempt=1):
             logging.exception('Please contact Brian to continue the archiving.')
             print("Unexpected error archiving files:", sys.exc_info()[0])
             print("\033[1m\033[91mContact Brian to finish archiving!\033[0m")
-            raise
+            raise subprocess.CalledProcessError(dsmc_job.returncode, dsmc_cmd)
     else:
         logging.info('DSMC Job successful')
         os.remove(archive_name)
@@ -681,7 +699,7 @@ def main():
     settings = load_config('archive.yaml')
 
     print('Scanning for files')
-    logging.info('Archiving script v2.0')
+    logging.info('Archiving script v2.2')
     logging.info('Scanning directory for files')
     files = list_files(settings)
     logging.info('Done scanning directory for files')

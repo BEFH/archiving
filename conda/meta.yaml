@@ -24,6 +24,7 @@ build:
   script: "{{ PYTHON }} setup.py install --single-version-externally-managed --record=record.txt"
   entry_points:
     - archive_goate = archive_goate:main
+    - archive_goate_safe archive_goate_safe:main
 
 test:
   imports:

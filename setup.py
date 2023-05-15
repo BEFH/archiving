@@ -2,9 +2,9 @@ from setuptools import setup, find_packages
 
 setup(
     name='archive_goate',
-    version='2.2',
+    version='2.3',
     description='Automatic backup script for goate lab.',
-    long_description=('Using DSMC to back up files is somewhat compled and\n'
+    long_description=('Using DSMC to back up files is somewhat complicated and\n'
                       'it\'s difficult to track what files and directories\n'
                       'have been archived in the lab. This script automates\n'
                       'the process of archiving, stores information about the\n'

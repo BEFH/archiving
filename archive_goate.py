@@ -28,6 +28,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
+__version__ = '2.3'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -314,7 +315,7 @@ def get_sizes(files):
     freed = files[files['keep'] == 'no'].loc[:, 'size_mib'].sum().round(1)
     kept = (total - freed).round(1)
 
-    kinds = files_nobroken.groupby(['kind']).sum().round(3)[['size_mib']]
+    kinds = files_nobroken.groupby(['kind']).sum(numeric_only=True).round(3)[['size_mib']]
 
     print('The total space taken up by each kind of file is as follows:\n')
     print(kinds)
@@ -589,13 +590,23 @@ def delete_files(files, archive_info, sizes, log_sz):
         logging.warning(discrep)
     return files, archive_info
 
+def delete_no_files(files, archive_info, sizes):
+    idx = files[files['filename'] == 'archive_{}.log'.format(logtime)].index
+    files.drop(idx, inplace=True)
+    logging.info('Not removing files')
+    archive_info['freed_mib'] = 0
+    archive_info['kept_mib'] = sizes['total']
+    files['removal'] = 'kept'
+    return files, archive_info
+
 
 def tsm_archive(temp_tarball, archive_info, files=None, attempt=1):
     archive_name = archive_info['archive_name']
-    logging.info('Moving archive tarball')
-    print('Moving archive tarball')
-    shutil.copy(temp_tarball, archive_name)
-    os.remove(temp_tarball)
+    if attempt == 1:
+        logging.info('Moving archive tarball')
+        print('Moving archive tarball')
+        shutil.copy(temp_tarball, archive_name)
+        os.remove(temp_tarball)
     logging.info('DSMC Job starting')
     print('DSMC Job starting')
     dsmc_cmd = [shutil.which('dsmc'), 'archive',
@@ -699,7 +710,7 @@ def main():
     settings = load_config('archive.yaml')
 
     print('Scanning for files')
-    logging.info('Archiving script v2.2')
+    logging.info(f'Archiving script v{__version__}')
     logging.info('Scanning directory for files')
     files = list_files(settings)
     logging.info('Done scanning directory for files')

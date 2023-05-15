@@ -10,7 +10,7 @@ source:
 requirements:
   build:
     - python
-    - setuptools
+    - pip
 
   run:
     - python
@@ -21,10 +21,10 @@ requirements:
 
 build:
   number: 0
-  script: "{{ PYTHON }} setup.py install --single-version-externally-managed --record=record.txt"
+  script: "{{ PYTHON }} -m pip install --no-deps --ignore-installed ."
   entry_points:
     - archive_goate = archive_goate:main
-    - archive_goate_safe archive_goate_safe:main
+    - archive_goate_safe = archive_goate:safe
 
 test:
   imports:

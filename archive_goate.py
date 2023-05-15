@@ -699,7 +699,7 @@ def logprint(message):
         print('\n{}\n'.format(message), file=logfile)
 
 
-def main():
+def main_loop(ask_del=True):
     logging.basicConfig(
         filename='archive_{}.log'.format(logtime), level=logging.INFO,
         format='%(asctime)s %(levelname)s: %(message)s',
@@ -723,7 +723,10 @@ def main():
 
     if question('Archive this folder:\n{}?'.format(os.getcwd())):
         archive_info, temp_tarball = make_tarball(files, sizes['total'])
-        files, archive_info = delete_files(files, archive_info, sizes, log_sz)
+        if ask_del == True:
+            files, archive_info = delete_files(files, archive_info, sizes, log_sz)
+        else:
+            files, archive_info = delete_no_files(files, archive_info, sizes)
         tsm_archive(temp_tarball, archive_info, files)
         database = '/sc/arion/projects/LOAD/archive/archive.sqlite'
         write_database(database, files, archive_info)
@@ -738,6 +741,11 @@ def main():
         logging.info('Exited without archiving')
         exit(0)
 
+def main():
+    main_loop(ask_del=True)
+
+def safe():
+    main_loop(ask_del=False)
 
 if __name__ == '__main__':
     main()

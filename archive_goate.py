@@ -28,7 +28,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '2.3'
+__version__ = '2.3.1'
 
 def get_type(ext, size, settings):
     types = settings['types']

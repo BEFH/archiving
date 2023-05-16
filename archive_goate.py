@@ -437,7 +437,7 @@ def make_tarball(files, total):
         job_expression = r'(?<=^Job <)\d+(?=> is submitted to queue)'
         job = re.search(job_expression, archive_job.stdout.decode())[0]
         completed = False
-        spinner = cycle(['-', '/', '|', '\\'])
+        spinner = cycle(['◐', '◓', '◑', '◒'])
         print("Waiting to check job.", end='\r')
         while not completed:
             time.sleep(5)
@@ -448,7 +448,7 @@ def make_tarball(files, total):
             if jobstat == 'PEND':
                 statmsg = "Tar job is pending... {}".format(next(spinner))
                 print(statmsg, end='\r')
-            elif jobstat == 'PEND':
+            elif jobstat == 'RUN':
                 statmsg = "Tar job is running... {}".format(next(spinner))
                 print(statmsg, end='\r')
             else:

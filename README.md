@@ -18,8 +18,6 @@ This script does the following:
    
 ## Installing the script:
 
-The script is at `/sc/arion/projects/LOAD/archive_minerva.py`, but it will not run unless you have up-to-date versions of pytz, pandas, tar (≥ v1.28) and pbzip2.
-
 Install the script and dependancies using the following command:
 
 ```bash
@@ -34,7 +32,7 @@ First, make sure you are using `screen` or `tmux` so that the archiving doesn't 
 2.  To detach from your session, press `Ctrl+a` then press `d`
 3.  To resume your session if you are disconnected or detach, run `screen -r` from the command line
 
-You can either type `/sc/arion/projects/LOAD/archive_minerva.py` or `archive_goate` in the directory you want to archive.
+You can type `archive_goate` in the directory you want to archive. If you definitely don't want to delete files and you want a safe script, run `archive_goate_safe`.
 
 The script will prompt you to determine how to proceed:
 

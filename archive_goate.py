@@ -600,7 +600,7 @@ def delete_no_files(files, archive_info, sizes):
     return files, archive_info
 
 
-def tsm_archive(temp_tarball, archive_info, files=None, attempt=1):
+def tsm_archive(temp_tarball, archive_info, files=None, attempt=1, keep_tar=False):
     archive_name = archive_info['archive_name']
     if attempt == 1:
         logging.info('Moving archive tarball')
@@ -635,8 +635,10 @@ def tsm_archive(temp_tarball, archive_info, files=None, attempt=1):
             print("Unexpected error archiving files:", sys.exc_info()[0])
             print("\033[1m\033[91mContact Brian to finish archiving!\033[0m")
             raise subprocess.CalledProcessError(dsmc_job.returncode, dsmc_cmd)
+    elif keep_tar:
+        logging.info('DSMC Job successful; keeping tarball.')
     else:
-        logging.info('DSMC Job successful')
+        logging.info('DSMC Job successful; deleting tarball.')
         os.remove(archive_name)
 
 
@@ -727,7 +729,10 @@ def main_loop(ask_del=True):
             files, archive_info = delete_files(files, archive_info, sizes, log_sz)
         else:
             files, archive_info = delete_no_files(files, archive_info, sizes)
-        tsm_archive(temp_tarball, archive_info, files)
+        if question('Keep archive tarball in directory after TSMC archiving?', default=False):
+            tsm_archive(temp_tarball, archive_info, files, keep_tar=True)
+        else:
+            tsm_archive(temp_tarball, archive_info, files)
         database = '/sc/arion/projects/LOAD/archive/archive.sqlite'
         write_database(database, files, archive_info)
         write_tables(files, archive_info)

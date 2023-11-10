@@ -18,6 +18,7 @@ requirements:
     - pandas
     - tar >=1.28
     - pbzip2
+    - click
 
 build:
   number: 0

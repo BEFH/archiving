@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 2.0
+# Archiving script Version 3.0
 
 # stdlib
 import os
@@ -23,12 +23,13 @@ from itertools import compress, cycle
 
 # packages
 import pytz
+import click
 import pandas as pd
 
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '2.3.1'
+__version__ = '3.0'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -215,7 +216,7 @@ def git_test_and_prompt(gitdir):
         logging.info('{} is a git project and is up to date'.format(gitdir))
 
 
-def question(text, default=None, prepend=''):
+def question_old(text, default=None, prepend=''):
     '''prompt with default. Use click.confirm if converting to package'''
     def _getch(message):
         print(message)
@@ -240,14 +241,16 @@ def question(text, default=None, prepend=''):
     if answer in ['', '\r'] and isinstance(default, bool):
         return default
     elif answer in ['', '\r']:
-        question(text, default, 'Please enter a response:\n')
+        question_old(text, default, 'Please enter a response:\n')
     elif answer.lower()[0] in ["y", "yes"]:
         return True
     elif answer.lower()[0] in ["n", "no"]:
         return False
     else:
-        question(text, default, 'Invalid answer; please try again:\n')
+        question_old(text, default, 'Invalid answer; please try again:\n')
 
+def question(text, default=None, prepend=''):
+  return click.confirm(prepend + text, default=default)
 
 def scantree(path, settings):
     '''Recursively yield DirEntry objects for given directory.'''
@@ -359,7 +362,10 @@ def make_tarball(files, total):
     fullpath = os.path.normpath(os.getcwd())
     parent = os.path.dirname(fullpath)
     cwd = os.path.basename(fullpath)
-    tznm = '/'.join(os.readlink('/etc/localtime').split('/')[-2:])
+    try:
+        tznm = '/'.join(os.readlink('/etc/localtime').split('/')[-2:])
+    except:
+        tznm = 'America/New_York'
     dt_current = datetime.datetime.now(tz=pytz.timezone(tznm))
     date = dt_current.strftime('%G-%b-%d')
     dt_iso = dt_current.isoformat()
@@ -509,11 +515,17 @@ def filehash(file, date):
     return hash.hexdigest(8)
 
 
-def file_rm(files, archive_info, sizes, log_sz):
+def file_rm(files, archive_info, sizes, log_sz, keep):
     logging.info('Removing files')
     files['removal'] = 'not removed'
-    if question('Do you want to keep {} MiB of small files?'.format(
-                sizes['kept']), True):
+    if keep in ['ask', 'default']:
+        keep_tf = question('Do you want to keep {} MiB of small files?'.format(
+                           sizes['kept']), True)
+    elif keep == 'none':
+        keep_tf = False
+    else:
+        keep_tf = True
+    if keep_tf:
         logging.info('Keeping {} MiB of small files'.format(sizes['kept']))
         logprint(log_sz)
         archive_info['freed_mib'] = sizes['freed']
@@ -551,12 +563,13 @@ def file_rm(files, archive_info, sizes, log_sz):
     return files, archive_info
 
 
-def delete_files(files, archive_info, sizes, log_sz):
+def delete_files(files, archive_info, sizes, log_sz, keep):
     idx = files[files['filename'] == 'archive_{}.log'.format(logtime)].index
     files.drop(idx, inplace=True)
     if question('Do you want to remove files after generating archive', False):
         try:
-            files, archive_info = file_rm(files, archive_info, sizes, log_sz)
+            files, archive_info = file_rm(files, archive_info, sizes, log_sz,
+                                          keep)
         except:
             logging.exception('Uncaught exception deleting files')
             print("Unexpected error deleting files:", sys.exc_info()[0])
@@ -746,11 +759,102 @@ def main_loop(ask_del=True):
         logging.info('Exited without archiving')
         exit(0)
 
+@click.command()
+@click.option('-d', '--delete', default=False, is_flag=True,
+              help='Delete files after confirming')
+@click.option('-k', '--keep', 
+              type=click.Choice(['small', 'none', 'ask', 'default'],
+                                case_sensitive=False),
+              default='default',
+              help='Keep small files, none, or ask (default is ask when deleting)')
+@click.option('-K', '--keep-config', type=click.File('r'),
+              help='Use YAML file to determine which files to keep')
+@click.option('-t', '--keep-tarball',
+              type=click.Choice(['yes', 'no', 'ask'], case_sensitive=False),
+              default='ask',
+              help='Keep tarball after archiving')
+
+def click_loop(delete, keep, keep_config, keep_tarball):
+    logging.basicConfig(
+        filename='archive_{}.log'.format(logtime), level=logging.INFO,
+        format='%(asctime)s %(levelname)s: %(message)s',
+        datefmt='%m/%d/%Y %H:%M:%S')
+
+    check_tmux()
+
+    if not delete and keep != 'default':
+        print('You must specify "-d" or "--delete" to delete files')
+        logging.critical(
+            '"-d" or "--delete" not specified but keep is not default')
+        exit(1)
+    if not delete and keep_config is not None:
+        print('You must specify "-d" or "--delete" to delete files')
+        logging.critical(
+            '"-d" or "--delete" not specified but keep file specified')
+        exit(1)
+    if keep_config is not None and keep != 'default':
+        print('You cannot specify both "-k" and "-K"')
+        logging.critical('Both "-k" and "-K" specified')
+        exit(1)
+    if safe and delete:
+        print('You cannot delete files in safe mode.')
+        logging.critical('"-d" or "--delete" specified in safe mode.')
+        exit(1)
+    if keep_config:
+        settings = load_config(keep_config)
+    else:
+        settings = load_config(False)
+
+    print('Scanning for files')
+    logging.info(f'Archiving script v{__version__}')
+    logging.info('Scanning directory for files')
+    files = list_files(settings)
+    logging.info('Done scanning directory for files')
+
+    if any(files['kind'] == 'gitdir') and delete:
+        for gitdir in files[files['kind'] == 'gitdir']['path']:
+            git_test_and_prompt(gitdir)
+
+    log_sz, sizes = get_sizes(files)
+
+    if question('Archive this folder:\n{}?'.format(os.getcwd())):
+        archive_info, temp_tarball = make_tarball(files, sizes['total'])
+        if delete == True:
+            files, archive_info = delete_files(files, archive_info, sizes,
+                                               log_sz, keep)
+        else:
+            files, archive_info = delete_no_files(files, archive_info, sizes)
+        if keep_tarball == 'ask':
+            keep_tarball_tf = question(
+                'Keep archive tarball in directory after TSMC archiving?',
+                default=False)
+        elif keep_tarball == 'yes':
+            keep_tarball_tf = True
+        else:
+            keep_tarball_tf = False
+        tsm_archive(temp_tarball, archive_info, files, keep_tar=keep_tarball_tf)
+        database = '/sc/arion/projects/LOAD/archive/archive.sqlite'
+        write_database(database, files, archive_info)
+        write_tables(files, archive_info)
+        logging.info('Done')
+        if 'removal_failure' in archive_info:
+            with open('info_dump.p', 'wb') as pklh:
+                pickle.dump(archive_info, pklh)
+            exit(1)
+        exit(0)
+    else:
+        logging.info('Exited without archiving')
+        exit(0)
+        
+
 def main():
-    main_loop(ask_del=True)
+    # main_loop(ask_del=True)
+    safe = False
+    click_loop()
 
 def safe():
-    main_loop(ask_del=False)
+    safe = True
+    click_loop()
 
 if __name__ == '__main__':
     main()

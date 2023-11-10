@@ -779,9 +779,15 @@ def click_loop(delete, keep, keep_config, keep_tarball):
                                                log_sz, keep)
         else:
             files, archive_info = delete_no_files(files, archive_info, sizes)
-        if keep_tarball == 'ask':
+        if keep_tarball == 'ask' and delete == True:
             keep_tarball_tf = question(
-                'Keep archive tarball in directory after TSMC archiving?',
+                'Keep archive tarball in directory after TSMC archiving?' +
+                '(may not reduce space used by directory)',
+                default=False)
+        elif keep_tarball == 'ask':
+            keep_tarball_tf = question(
+                'Keep archive tarball in directory after TSMC archiving?' +
+                '(NOT RECOMMENDED: may double disk usage)',
                 default=False)
         elif keep_tarball == 'yes':
             keep_tarball_tf = True

@@ -566,7 +566,7 @@ def file_rm(files, archive_info, sizes, log_sz, keep):
 def delete_files(files, archive_info, sizes, log_sz, keep):
     idx = files[files['filename'] == 'archive_{}.log'.format(logtime)].index
     files.drop(idx, inplace=True)
-    if question('Do you want to remove files after generating archive', False):
+    if question('Do you still want to remove files after generating archive'):
         try:
             files, archive_info = file_rm(files, archive_info, sizes, log_sz,
                                           keep)
@@ -713,51 +713,6 @@ def logprint(message):
     with open('archive_{}.log'.format(logtime), 'a') as logfile:
         print('\n{}\n'.format(message), file=logfile)
 
-
-def main_loop(ask_del=True):
-    logging.basicConfig(
-        filename='archive_{}.log'.format(logtime), level=logging.INFO,
-        format='%(asctime)s %(levelname)s: %(message)s',
-        datefmt='%m/%d/%Y %H:%M:%S')
-
-    check_tmux()
-
-    settings = load_config('archive.yaml')
-
-    print('Scanning for files')
-    logging.info(f'Archiving script v{__version__}')
-    logging.info('Scanning directory for files')
-    files = list_files(settings)
-    logging.info('Done scanning directory for files')
-
-    if any(files['kind'] == 'gitdir'):
-        for gitdir in files[files['kind'] == 'gitdir']['path']:
-            git_test_and_prompt(gitdir)
-
-    log_sz, sizes = get_sizes(files)
-
-    if question('Archive this folder:\n{}?'.format(os.getcwd())):
-        archive_info, temp_tarball = make_tarball(files, sizes['total'])
-        if ask_del == True:
-            files, archive_info = delete_files(files, archive_info, sizes, log_sz)
-        else:
-            files, archive_info = delete_no_files(files, archive_info, sizes)
-        if question('Keep archive tarball in directory after TSMC archiving?', default=False):
-            tsm_archive(temp_tarball, archive_info, files, keep_tar=True)
-        else:
-            tsm_archive(temp_tarball, archive_info, files)
-        database = '/sc/arion/projects/LOAD/archive/archive.sqlite'
-        write_database(database, files, archive_info)
-        write_tables(files, archive_info)
-        logging.info('Done')
-        if 'removal_failure' in archive_info:
-            with open('info_dump.p', 'wb') as pklh:
-                pickle.dump(archive_info, pklh)
-            exit(1)
-        exit(0)
-    else:
-        logging.info('Exited without archiving')
-        exit(0)
 
 @click.command()
 @click.option('-d', '--delete', default=False, is_flag=True,

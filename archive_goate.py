@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 3.0
+# Archiving script Version 3.1
 
 # stdlib
 import os
@@ -713,23 +713,24 @@ def logprint(message):
     with open('archive_{}.log'.format(logtime), 'a') as logfile:
         print('\n{}\n'.format(message), file=logfile)
 
+main_opts = {
+    'd': click.option('-d', '--delete', default=False, is_flag=True,
+        help='Delete files after confirming'),
+    'k': click.option('-k', '--keep', 
+        type=click.Choice(['small', 'none', 'ask', 'default'],
+                          case_sensitive=False),
+        default='default',
+        help='Keep small files, none, or ask (default is ask when deleting)'),
+    'K': click.option('-K', '--keep-config', type=click.File('r'),
+        help='Use YAML file to determine which files to keep'),
+    't': click.option('-t', '--keep-tarball',
+        type=click.Choice(['yes', 'no', 'ask'], case_sensitive=False),
+        default='ask',
+        help='Keep tarball after archiving')
+    }
 
-@click.command()
-@click.option('-d', '--delete', default=False, is_flag=True,
-              help='Delete files after confirming')
-@click.option('-k', '--keep', 
-              type=click.Choice(['small', 'none', 'ask', 'default'],
-                                case_sensitive=False),
-              default='default',
-              help='Keep small files, none, or ask (default is ask when deleting)')
-@click.option('-K', '--keep-config', type=click.File('r'),
-              help='Use YAML file to determine which files to keep')
-@click.option('-t', '--keep-tarball',
-              type=click.Choice(['yes', 'no', 'ask'], case_sensitive=False),
-              default='ask',
-              help='Keep tarball after archiving')
-
-def click_loop(delete, keep, keep_config, keep_tarball):
+# Template for all command line usage
+def cmd_shared(delete, keep, keep_config, keep_tarball, safe=False):
     logging.basicConfig(
         filename='archive_{}.log'.format(logtime), level=logging.INFO,
         format='%(asctime)s %(levelname)s: %(message)s',
@@ -807,15 +808,21 @@ def click_loop(delete, keep, keep_config, keep_tarball):
         logging.info('Exited without archiving')
         exit(0)
         
+@click.command()
+@main_opts['d']
+@main_opts['k']
+@main_opts['K']
+@main_opts['t']
+def main(delete, keep, keep_config, keep_tarball):
+    cmd_shared(delete, keep, keep_config, keep_tarball)
 
-def main():
-    # main_loop(ask_del=True)
-    safe = False
-    click_loop()
-
-def safe():
-    safe = True
-    click_loop()
+@click.command()
+@main_opts['d']
+@main_opts['k']
+@main_opts['K']
+@main_opts['t']
+def safe(delete, keep, keep_config, keep_tarball):
+    cmd_shared(delete, keep, keep_config, keep_tarball, True)
 
 if __name__ == '__main__':
     main()

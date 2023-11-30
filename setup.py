@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='archive_goate',
-    version='3.0',
+    version='3.1',
     description='Automatic backup script for goate lab.',
     long_description=('Using DSMC to back up files is somewhat complicated and\n'
                       'it\'s difficult to track what files and directories\n'
@@ -30,8 +30,9 @@ setup(
         'Programming Language :: Python :: 3.12',
         'Operating System :: POSIX :: Linux',
     ],
-    install_requires=['pytz','pandas'],
+    install_requires=['pytz','pandas','click'],
     entry_points={
-        'console_scripts': ['archive_goate=archive_goate:main'],
+        'console_scripts': ['archive_goate=archive_goate:main',
+                            'archive_goate_safe=archive_goate:safe'],
     },
 )

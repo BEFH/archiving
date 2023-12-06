@@ -729,6 +729,9 @@ main_opts = {
         help='Keep tarball after archiving')
     }
 
+def main_opt_get(k):
+    return main_opts[k]
+
 # Template for all command line usage
 def cmd_shared(delete, keep, keep_config, keep_tarball, safe=False):
     logging.basicConfig(
@@ -809,18 +812,18 @@ def cmd_shared(delete, keep, keep_config, keep_tarball, safe=False):
         exit(0)
         
 @click.command()
-@main_opts['d']
-@main_opts['k']
-@main_opts['K']
-@main_opts['t']
+@main_opt_get('d')
+@main_opt_get('k')
+@main_opt_get('K')
+@main_opt_get('t')
 def main(delete, keep, keep_config, keep_tarball):
     cmd_shared(delete, keep, keep_config, keep_tarball)
 
 @click.command()
-@main_opts['d']
-@main_opts['k']
-@main_opts['K']
-@main_opts['t']
+@main_opt_get('d')
+@main_opt_get('k')
+@main_opt_get('K')
+@main_opt_get('t')
 def safe(delete, keep, keep_config, keep_tarball):
     cmd_shared(delete, keep, keep_config, keep_tarball, True)
 

@@ -29,7 +29,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '3.0'
+__version__ = '4.0'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -197,23 +197,27 @@ def git_test(gitdir):
     return 0
 
 
-def git_test_and_prompt(gitdir):
+def git_test_and_prompt(gitdir, batch=False):
     git_status = git_test(gitdir)
     if git_status == 1:
         print("We recommend you cancel the script and commit changes.")
-        if question("Do you want to cancel?", True):
+        if not batch and question("Do you want to cancel?", True):
+            logging.info(
+                f'{gitdir} is a git project and is ahead of remote. Exiting')
             exit(1)
         else:
             logging.warning(
-                '{} is a git project and is ahead of remote'.format(gitdir))
+                f'{gitdir} is a git project and is ahead of remote')
     elif git_status == 2:
-        if question("Do you want to cancel to commit and push changes?", True):
+        if not batch and question("Do you want to cancel to commit and push changes?", True):
+            logging.warning(
+                f'{gitdir} is a git project and has untracked changes')
             exit(1)
         else:
             logging.warning(
-                '{} is a git project and has untracked changes'.format(gitdir))
+                f'{gitdir} is a git project and has untracked changes')
     else:
-        logging.info('{} is a git project and is up to date'.format(gitdir))
+        logging.info(f'{gitdir} is a git project and is up to date')
 
 
 def question_old(text, default=None, prepend=''):
@@ -249,8 +253,16 @@ def question_old(text, default=None, prepend=''):
     else:
         question_old(text, default, 'Invalid answer; please try again:\n')
 
-def question(text, default=None, prepend=''):
-  return click.confirm(prepend + text, default=default)
+def question(text, default=None, prepend='', batch=False, default_batch=None):
+    if batch:
+        if default_batch is None and default in [True, False]:
+            return default
+        elif default_batch in [True, False]:
+            return default_batch
+        else:
+            logging.error(f"In batch mode with no default for question {text}")
+            raise ValueError(f"In batch mode with no default for question {text}")
+    return click.confirm(prepend + text, default=default)
 
 def scantree(path, settings):
     '''Recursively yield DirEntry objects for given directory.'''
@@ -282,7 +294,9 @@ def check_tmux():
     '''Check that screen or tmux are in use:'''
     if os.getenv('TERM') != 'screen':
         print('We recommend running in screen or tmux.')
+        logging.warning('Screen/TMUX session not detected.')
         if question('Quit to run screen or tmux?', True):
+            logging.error('Quitting because not in Screen or TMUX.')
             exit(2)
 
 
@@ -358,7 +372,7 @@ def exit_code(logname):
     return 0
 
 
-def make_tarball(files, total):
+def make_tarball(files, total, batch=False):
     fullpath = os.path.normpath(os.getcwd())
     parent = os.path.dirname(fullpath)
     cwd = os.path.basename(fullpath)
@@ -486,22 +500,37 @@ def make_tarball(files, total):
                 print('The following files were unsuccessful:')
                 with open(eo, 'r') as f:
                     print(f.read(), end='\n')
-                print('You can choose to try again, to use this archive,'
-                      + '\n or to abort all operations.')
-                if tar_attempt == 3 or not question('Try again?', True):
-                    if question('Continue with incomplete archive?'):
-                        logging.warning('Continuing with incomplete archive.')
-                        print('WARNING: Continuing with incomplete archive.')
-                        break
-                    else:
-                        logging.error('Aborting because tar is incomplete.')
-                        os.remove(temp_tarball)
-                        raise Exception('Aborting because tar is incomplete.')
+                if not batch:
+                    print('You can choose to try again, to use this archive,'
+                          + '\n or to abort all operations.')
+                if tar_attempt < 3 and question('Try again?', True, batch=batch):
+                    print('Trying archiving again.')
+                    logging.warning('Trying archiving again.')
+                    tar_attempt += 1
+                elif batch:
+                    logging.error('Aborting because tar is incomplete in batch mode.')
+                    os.remove(temp_tarball)
+                    raise Exception('Aborting because tar is incomplete.')
+                elif question('Continue with incomplete archive?'):
+                    logging.warning('Continuing with incomplete archive.')
+                    print('WARNING: Continuing with incomplete archive.')
+                    break
+                else:
+                    logging.error('Aborting because tar is incomplete.')
+                    os.remove(temp_tarball)
+                    raise Exception('Aborting because tar is incomplete.')
             else:
-                print('Archiving failed. You can choose to try again'
-                      + '\n or to abort all operations.')
-                retry = tar_attempt < 3 and question('Try again?', True)
-                if not retry:
+                retry = tar_attempt < 3
+                if batch:
+                    logging.warning('Archiving failed.')
+                else:
+                    print('Archiving failed. You can choose to try again'
+                          + '\n or to abort all operations.')
+                    retry = retry and question('Try again?', True)
+                if retry:
+                    print('Trying archiving again.')
+                    logging.warning('Trying archiving again.')
+                else:
                     logging.error('Aborting because tar failed.')
                     raise Exception('Aborting because tar failed.')
             tar_attempt += 1
@@ -563,10 +592,10 @@ def file_rm(files, archive_info, sizes, log_sz, keep):
     return files, archive_info
 
 
-def delete_files(files, archive_info, sizes, log_sz, keep):
+def delete_files(files, archive_info, sizes, log_sz, keep, batch=False):
     idx = files[files['filename'] == 'archive_{}.log'.format(logtime)].index
     files.drop(idx, inplace=True)
-    if question('Do you still want to remove files after generating archive'):
+    if batch or question('Do you still want to remove files after generating archive'):
         try:
             files, archive_info = file_rm(files, archive_info, sizes, log_sz,
                                           keep)
@@ -575,7 +604,7 @@ def delete_files(files, archive_info, sizes, log_sz, keep):
             print("Unexpected error deleting files:", sys.exc_info()[0])
             with open('archive_dump.p', 'wb') as pklh:
                 pickle.dump(files, pklh)
-            if question('Do you want to continue anyway?', False):
+            if batch or question('Do you want to continue anyway?', False):
                 files['removal'] = 'fail: other'
                 archive_info['freed_mib'] = 0
                 archive_info['kept_mib'] = sizes['total']
@@ -613,7 +642,7 @@ def delete_no_files(files, archive_info, sizes):
     return files, archive_info
 
 
-def tsm_archive(temp_tarball, archive_info, files=None, attempt=1, keep_tar=False):
+def tsm_archive(temp_tarball, archive_info, files=None, attempt=1, keep_tar=False, batch=False):
     archive_name = archive_info['archive_name']
     if attempt == 1:
         logging.info('Moving archive tarball')
@@ -634,8 +663,13 @@ def tsm_archive(temp_tarball, archive_info, files=None, attempt=1, keep_tar=Fals
             logprint(line.strip())
     logging.info('DSMC Job completed')
     if dsmc_job.returncode != 0:
-        if attempt < 4 and question('Archiving failed with {}. Try again?'.format(dsmc_job.returncode), False):
-            tsm_archive(temp_tarball, archive_info, files, attempt + 1)
+        logging.warning(f"DSMC Job (attempt {attempt}) was unsuccessful with return {dsmc_job.returncode}.")
+        if batch and attempt < 4:
+            print("DSMC Job (attempt {attempt}) was unsuccessful with return {dsmc_job.returncode}. Trying again.")
+            logging.info("Trying again.")
+            tsm_archive(temp_tarball, archive_info, files, attempt + 1, keep_tar, batch=True)
+        elif attempt < 4 and question(f'Archiving failed with return {dsmc_job.returncode}. Try again?', False):
+            tsm_archive(temp_tarball, archive_info, files, attempt + 1, keep_tar)
         else:
             if files is not None:
                 with open('archive_dump.p', 'wb') as pklh:
@@ -733,13 +767,14 @@ def main_opt_get(k):
     return main_opts[k]
 
 # Template for all command line usage
-def cmd_shared(delete, keep, keep_config, keep_tarball, safe=False):
+def archive(delete, keep, keep_config, keep_tarball, safe=False, batch=False):
     logging.basicConfig(
         filename='archive_{}.log'.format(logtime), level=logging.INFO,
         format='%(asctime)s %(levelname)s: %(message)s',
         datefmt='%m/%d/%Y %H:%M:%S')
 
-    check_tmux()
+    if not batch:
+        check_tmux()
 
     if not delete and keep != 'default':
         print('You must specify "-d" or "--delete" to delete files')
@@ -759,6 +794,13 @@ def cmd_shared(delete, keep, keep_config, keep_tarball, safe=False):
         print('You cannot delete files in safe mode.')
         logging.critical('"-d" or "--delete" specified in safe mode.')
         exit(1)
+    if batch and keep_tarball == 'ask':
+        logging.critical('"keep_tarball" set to "ask" in batch mode.')
+        raise ValueError('You cannot ask about tarball keeping in batch mode.')
+    if batch and keep in ['ask', 'default']:
+        print('You cannot ask about tarball keeping in batch mode.')
+        logging.critical('"keep" set to "ask" or "default" in batch mode.')
+        raise ValueError('You cannot ask about keeping files in batch mode. Valid options for "keep" are "small" or "none"')
     if keep_config:
         settings = load_config(keep_config)
     else:
@@ -771,16 +813,17 @@ def cmd_shared(delete, keep, keep_config, keep_tarball, safe=False):
     logging.info('Done scanning directory for files')
 
     if any(files['kind'] == 'gitdir') and delete:
+        logging.info("Git directories detected")
         for gitdir in files[files['kind'] == 'gitdir']['path']:
-            git_test_and_prompt(gitdir)
+            git_test_and_prompt(gitdir, batch)
 
     log_sz, sizes = get_sizes(files)
 
-    if question('Archive this folder:\n{}?'.format(os.getcwd())):
-        archive_info, temp_tarball = make_tarball(files, sizes['total'])
+    if batch or question('Archive this folder:\n{}?'.format(os.getcwd())):
+        archive_info, temp_tarball = make_tarball(files, sizes['total'], batch)
         if delete == True:
             files, archive_info = delete_files(files, archive_info, sizes,
-                                               log_sz, keep)
+                                               log_sz, keep, batch=batch)
         else:
             files, archive_info = delete_no_files(files, archive_info, sizes)
         if keep_tarball == 'ask' and delete == True:
@@ -797,7 +840,7 @@ def cmd_shared(delete, keep, keep_config, keep_tarball, safe=False):
             keep_tarball_tf = True
         else:
             keep_tarball_tf = False
-        tsm_archive(temp_tarball, archive_info, files, keep_tar=keep_tarball_tf)
+        tsm_archive(temp_tarball, archive_info, files, keep_tar=keep_tarball_tf, batch=batch)
         database = '/sc/arion/projects/LOAD/archive/archive.sqlite'
         write_database(database, files, archive_info)
         write_tables(files, archive_info)
@@ -817,7 +860,7 @@ def cmd_shared(delete, keep, keep_config, keep_tarball, safe=False):
 @main_opt_get('K')
 @main_opt_get('t')
 def main(delete, keep, keep_config, keep_tarball):
-    cmd_shared(delete, keep, keep_config, keep_tarball)
+    archive(delete, keep, keep_config, keep_tarball)
 
 @click.command()
 @main_opt_get('d')
@@ -825,7 +868,7 @@ def main(delete, keep, keep_config, keep_tarball):
 @main_opt_get('K')
 @main_opt_get('t')
 def safe(delete, keep, keep_config, keep_tarball):
-    cmd_shared(delete, keep, keep_config, keep_tarball, True)
+    archive(delete, keep, keep_config, keep_tarball, True)
 
 if __name__ == '__main__':
     main()

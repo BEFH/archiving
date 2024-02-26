@@ -393,7 +393,8 @@ def exit_code(logname):
 
 
 def make_tarball(files, total, batch=False, wdir='.',
-                 date_time=None, fname_xtra=None):
+                 date_time=None, fname_xtra=None,
+                 indiv_files=False):
     if wdir == '.':
         wdir = os.getcwd()
     fullpath = os.path.normpath(wdir)
@@ -409,7 +410,9 @@ def make_tarball(files, total, batch=False, wdir='.',
     hash_dtd = filehash(cwd, dt_iso)
     files['file_id'] = [filehash(x, dt_iso) for x in files['path']]
     files['archive_id'] = hash_dtd
-    tarball = '{dirname}_{date}.tar.bz2'.format(dirname=cwd, date=date)
+    dt = date_time if date_time else date
+    dte = f'{fname_xtra}_{dt}' if fname_xtra else dt
+    tarball = f'{cwd}_{dte}.tar.bz2'
     username = getpass.getuser()
 
     archive_info = {
@@ -421,17 +424,22 @@ def make_tarball(files, total, batch=False, wdir='.',
         'total_mib': total
         }
 
-    dt = date_time if date_time else date
-    dte = f'{fname_xtra}_{dte}' if fname_xtra else dt
 
-    oo = f'{cwd}_{dte}.tarball.stdout'
-    eo = f'{cwd}_{dte}.tarball.stderr'
+    jobname = f'{cwd}_{dte}.tarball'
+    oo = f'{jobname}.stdout'
+    eo = f'{jobname}.stderr'
+
+    if indiv_files:
+        file_list = [os.path.join(cwd, x) for x in files['path']]
+        tar_list = ' '.join(file_list)
+    else:
+        tar_list = cwd
 
     tempdir = '/sc/arion/scratch/{}/archiving'.format(username)
     temp_tarball = '{}/{}'.format(tempdir, tarball)
-    tar_cmd = 'tar -cvpjf {} -C {} {}'.format(temp_tarball, parent, cwd)
+    tar_cmd = 'tar -cvpjf {} -C {} {}'.format(temp_tarball, parent, tar_list)
     tar_cmd_fast = 'tar c -I"pbzip2 -p24" -f {} -C {} --xattrs --acls {}'
-    tar_cmd_fast = tar_cmd_fast.format(temp_tarball, parent, cwd)
+    tar_cmd_fast = tar_cmd_fast.format(temp_tarball, parent, tar_list)
 
     try:
         not_used = subprocess.run(["pbzip2", "-h"], capture_output=True)
@@ -463,13 +471,8 @@ def make_tarball(files, total, batch=False, wdir='.',
         logging.warning("Using slow serial compression and no ACLs.")
 
     job_cmd = ('bsub -P acc_LOAD -q premium -n {} -R rusage[mem=1000] '
-               + '''-R span[hosts=1] -W 140:00 -oo {} -eo {} '{}' ''')
-    job_cmd = job_cmd.format(ncore, oo, eo, tar_cmd)
-    # -c create
-    # -v verbose
-    # -p preserve permissions
-    # -j bzip2
-    # -f tarball file name
+               + '''-R span[hosts=1] -W 140:00 -J {} -oo {} -eo {} '{}' ''')
+    job_cmd = job_cmd.format(ncore, jobname, oo, eo, tar_cmd)
     tempdir_path = pathlib.Path(tempdir)
     pathlib.Path.mkdir(tempdir_path, parents=True, exist_ok=True)
     tar_incomplete = True
@@ -933,6 +936,7 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no", safe=False,
     if files is None:
         fname_extra = None
         files = list_files(settings)
+        individual_files = False
     else:
         if type(files) is str:
             fname_extra = files
@@ -954,6 +958,7 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no", safe=False,
                 raise ValueError(f'File {file} is not a relative path.')
         files = ["./" + str(pathlib.PurePath(file)) for file in files]
         files = list_files(files, settings)
+        individual_files = True
     logging.info('Done scanning directory for files')
 
     if any(files['kind'] == 'gitdir') and delete:
@@ -967,7 +972,8 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no", safe=False,
         archive_info, temp_tarball = make_tarball(files, sizes['total'], batch,
                                                   date_time=logtime,
                                                   fname_xtra=fname_extra,
-                                                  wdir=dir_archive)
+                                                  wdir=dir_archive,
+                                                  indiv_files=individual_files)
         if delete == True:
             files, archive_info = delete_files(files, archive_info, sizes,
                                                log_sz, keep, batch=batch)

@@ -7,11 +7,11 @@ Usage:
         archive = [list of files to be archived],
         prereqs = [list of files to wait for]
     params:
-        directory: directory to use as root for the archiving if
-            that differs from the common prefix of the input files
-        delete: if True, the input files will be deleted after archiving
-        keep: if 'small', small files will be kept after archiving; optional
-    output: output file to be touched after archiving
+        directory = [directory to use as root for the archiving if
+            that differs from the common prefix of the input files],
+        delete = [if True, the input files will be deleted after archiving],
+        keep = [if 'small', small files will be kept after archiving; optional],
+    output: [output file to be touched after archiving]
 '''
 
 import os

@@ -54,7 +54,10 @@ def get_type(ext, size, settings):
 
 def getinfo_dir(entry):
     keep = 'unknown'
-    path = entry.path
+    if type(entry) == os.DirEntry:
+        path = entry.path
+    else:
+        path = str(entry)
     ext = 'directory'
     directory = True
     if entry.name == '.git':
@@ -85,7 +88,10 @@ def getinfo_dir(entry):
 
 
 def getinfo_file(entry, settings):
-    path = entry.path
+    if type(entry) == os.DirEntry:
+        path = entry.path
+    else:
+        path = str(entry)
     keep = 'unknown'
 
     if entry.name == 'Snakefile':
@@ -264,41 +270,6 @@ def question(text, default=None, prepend='', batch=False, default_batch=None):
             raise ValueError(f"In batch mode with no default for question {text}")
     return click.confirm(prepend + text, default=default)
 
-def scantree(path, settings):
-    '''Recursively yield DirEntry objects for given directory.'''
-    for entry in os.scandir(path):
-        if entry.is_dir(follow_symlinks=False):
-            if entry.name == '.git':
-                yield getinfo(entry, settings)
-            yield from scantree(entry.path, settings)
-        else:
-            yield getinfo(entry, settings)
-
-
-def list_files(settings):
-    files = [x for x in scantree('.', settings) if x is not None]
-    files = pd.DataFrame.from_records(files)
-    files['user'] = [pwd.getpwuid(int(x))[0]
-                     if not pd.isnull(x) else None
-                     for x in files['user']]
-    files['group'] = [grp.getgrgid(int(x))[0]
-                      if not pd.isnull(x) else None
-                      for x in files['group']]
-    files['time_modified'] = [datetime.datetime.fromtimestamp(x)
-                              if not pd.isnull(x) else None
-                              for x in files['time_modified']]
-    return(files)
-
-
-def check_tmux():
-    '''Check that screen or tmux are in use:'''
-    if os.getenv('TERM') != 'screen':
-        print('We recommend running in screen or tmux.')
-        logging.warning('Screen/TMUX session not detected.')
-        if question('Quit to run screen or tmux?', True):
-            logging.error('Quitting because not in Screen or TMUX.')
-            exit(2)
-
 
 def load_config(configfile):
     if os.path.isfile(configfile):
@@ -322,6 +293,55 @@ def load_config(configfile):
                 }
             }
     return settings
+
+
+def scantree(path, settings=load_config(False)):
+    '''Recursively yield DirEntry objects for given directory.'''
+    for entry in os.scandir(path):
+        if entry.is_dir(follow_symlinks=False):
+            if entry.name == '.git':
+                yield getinfo(entry, settings)
+            yield from scantree(entry.path, settings)
+        else:
+            yield getinfo(entry, settings)
+
+
+def scanfiles(paths='.', settings=load_config(False)):
+    '''Recursively yield DirEntry objects for given directories and files.'''
+    if type(paths) is str:
+        paths = [paths]
+    for path in paths:
+        path = pathlib.Path(path)
+        if path.is_dir():
+            if path == '.git':
+                yield getinfo(path, settings)
+            yield from scantree(path, settings)
+        else:
+            yield getinfo(path, settings)
+
+def list_files(path='.', settings=load_config(False)):
+    files = [x for x in scanfiles(path, settings) if x is not None]
+    files = pd.DataFrame.from_records(files)
+    files['user'] = [pwd.getpwuid(int(x))[0]
+                     if not pd.isnull(x) else None
+                     for x in files['user']]
+    files['group'] = [grp.getgrgid(int(x))[0]
+                      if not pd.isnull(x) else None
+                      for x in files['group']]
+    files['time_modified'] = [datetime.datetime.fromtimestamp(x)
+                              if not pd.isnull(x) else None
+                              for x in files['time_modified']]
+    return files
+
+
+def check_tmux():
+    '''Check that screen or tmux are in use:'''
+    if os.getenv('TERM') != 'screen':
+        print('We recommend running in screen or tmux.')
+        logging.warning('Screen/TMUX session not detected.')
+        if question('Quit to run screen or tmux?', True):
+            logging.error('Quitting because not in Screen or TMUX.')
+            exit(2)
 
 
 def get_sizes(files):
@@ -642,7 +662,8 @@ def delete_no_files(files, archive_info, sizes):
     return files, archive_info
 
 
-def tsm_archive(temp_tarball, archive_info, files=None, attempt=1, keep_tar=False, batch=False):
+def tsm_archive(temp_tarball, archive_info, files=None, attempt=1,
+                keep_tar=False, batch=False, ans_codes=[]):
     archive_name = archive_info['archive_name']
     if attempt == 1:
         logging.info('Moving archive tarball')
@@ -661,16 +682,82 @@ def tsm_archive(temp_tarball, archive_info, files=None, attempt=1, keep_tar=Fals
         for line in dsmc_job.stdout:
             print(line, end='')
             logprint(line.strip())
+            ans_codes += re.findall(r'ANS\d{4}[WES]', line)
     logging.info('DSMC Job completed')
-    if dsmc_job.returncode != 0:
+    warnings = {
+        'OK': {
+            'ANS1144W': 'No password auth',
+            'ANS1261W': 'archive description is empty string',
+            'ANS1424W': 'Retrying after issue',
+            'ANS1587W': 'Unable to read xattrs for file',
+            'ANS1740W': 'Unable to read ACLs for file',
+            'ANS1741W': 'Unable to read xattrs for file',
+            'ANS1809W': 'TSM disconnect'
+            },
+        'retry': {
+            'ANS1588W': 'IO error reading attrs'
+            },
+        'fail': {
+            'ANS1133W': "Bad wildcard",
+            'ANS1184W': "Command not supported",
+            'ANS1115W': 'Filename excluded',
+            'ANS1252W': 'Function not supported on server',
+            'ANS1375W': 'User requested skip', # We did not
+            'ANS1832W': 'Option no longer supported',
+            'ANS1946W': 'File exists; skipping',
+            'ANS1947W': 'Directory exists; skipping'
+        }
+    }
+    if dsmc_job.returncode == 8:
+        logging.warning(f'DSMC job (attempt {attempt}) completed with warnings.')
+        if batch and attempt < 4:
+            print("DSMC Job (attempt {attempt}) had warnings with return {dsmc_job.returncode}. Trying again.")
+            logging.info("Trying again.")
+            tsm_archive(temp_tarball, archive_info, files,
+                        attempt + 1, keep_tar, batch=True,
+                        ans_codes=ans_codes)
+        elif attempt < 4 and question(f'Archiving failed with return {dsmc_job.returncode}. Try again?', False):
+            tsm_archive(temp_tarball, archive_info, files,
+                        attempt + 1, keep_tar, ans_codes=ans_codes)
+        else:
+            ans_codes = list(set(ans_codes))
+            ans_codes_n = len(ans_codes)
+            ans_codes_s = 's' if ans_codes_n > 1 else ''
+            ans_code_waswere = 'was' if ans_codes_n == 1 else 'were'
+            ans_codes = ', '.join(ans_codes[:-1]) + ' and ' + ans_codes[-1] if ans_codes_n > 1 else ans_codes[0]
+            ans_code_msg = f"The TSM ANS code{ans_codes_s} {ans_code_waswere} {ans_codes}."
+            if files is not None:
+                with open('archive_dump.p', 'wb') as pklh:
+                    pickle.dump(files, pklh)
+            archive_info['exception'] = 'archiving'
+            with open('info_dump.p', 'wb') as pklh:
+                pickle.dump(archive_info, pklh)
+            logging.exception('Uncaught warning archiving files')
+            logging.exception(ans_code_msg)
+            logging.exception('Please contact Brian to continue the archiving.')
+            print("Unexpected warning(s) archiving files:", sys.exc_info()[0])
+            print(ans_code_msg)
+            print("\033[1m\033[91mContact Brian to finish archiving!\033[0m")
+            raise subprocess.CalledProcessError(dsmc_job.returncode, dsmc_cmd)
+    elif dsmc_job.returncode != 0:
         logging.warning(f"DSMC Job (attempt {attempt}) was unsuccessful with return {dsmc_job.returncode}.")
         if batch and attempt < 4:
             print("DSMC Job (attempt {attempt}) was unsuccessful with return {dsmc_job.returncode}. Trying again.")
             logging.info("Trying again.")
-            tsm_archive(temp_tarball, archive_info, files, attempt + 1, keep_tar, batch=True)
+            tsm_archive(temp_tarball, archive_info, files,
+                        attempt + 1, keep_tar, batch=True,
+                        ans_codes=ans_codes)
         elif attempt < 4 and question(f'Archiving failed with return {dsmc_job.returncode}. Try again?', False):
-            tsm_archive(temp_tarball, archive_info, files, attempt + 1, keep_tar)
+            tsm_archive(temp_tarball, archive_info, files,
+                        attempt + 1, keep_tar, ans_codes=ans_codes)
         else:
+            ans_codes = list(set(ans_codes))
+            ans_codes_n = len(ans_codes)
+            ans_codes_s = 's' if ans_codes_n > 1 else ''
+            ans_code_waswere = 'was' if ans_codes_n == 1 else 'were'
+            # join the set of ans_codes with ", " for for all but the last, and " and " for the last
+            ans_codes = ', '.join(ans_codes[:-1]) + ' and ' + ans_codes[-1] if ans_codes_n > 1 else ans_codes[0]
+            ans_code_msg = f"The TSM ANS code{ans_codes_s} {ans_code_waswere} {ans_codes}."
             if files is not None:
                 with open('archive_dump.p', 'wb') as pklh:
                     pickle.dump(files, pklh)
@@ -678,8 +765,10 @@ def tsm_archive(temp_tarball, archive_info, files=None, attempt=1, keep_tar=Fals
             with open('info_dump.p', 'wb') as pklh:
                 pickle.dump(archive_info, pklh)
             logging.exception('Uncaught exception archiving files')
+            logging.exception(ans_code_msg)
             logging.exception('Please contact Brian to continue the archiving.')
             print("Unexpected error archiving files:", sys.exc_info()[0])
+            print(ans_code_msg)
             print("\033[1m\033[91mContact Brian to finish archiving!\033[0m")
             raise subprocess.CalledProcessError(dsmc_job.returncode, dsmc_cmd)
     elif keep_tar:
@@ -712,9 +801,14 @@ def write_database(dbpath, files, archive_info):
         logging.info('Done writing to lab archive DB')
 
 
-def write_tables(files, archive_info):
+def write_tables(files, archive_info, fname_extra=None):
     try:
-        fname = 'archived_file-list_{}.tsv.gz'.format(logtime)
+        if type(fname_extra) is str:
+            fname_info = f'archive_info_{fname_extra}_{logtime}.log'
+            fname = f'archived_file-list_{fname_extra}_{logtime}.tsv.gz'
+        else:
+            fname_info = f'archive_info_{logtime}.log'
+            fname = f'archived_file-list_{logtime}.tsv.gz'
         logging.info('Writing text tables to directory')
         files.to_csv(fname, sep='\t', index=False)
         archive_info = '''
@@ -727,7 +821,7 @@ Total original size (MiB): {total_mib}
 '''.format(**archive_info)
         print(archive_info)
         logprint(archive_info)
-        with open('archive_info_{}.log'.format(logtime), 'w') as ai:
+        with open(fname_info, 'w') as ai:
             print(archive_info, file=ai)
     except:
         with open('archive_dump.p', 'wb') as pklh:
@@ -767,11 +861,26 @@ def main_opt_get(k):
     return main_opts[k]
 
 # Template for all command line usage
-def archive(delete, keep, keep_config, keep_tarball, safe=False, batch=False):
+def archive(delete, keep="ask", keep_config=None, keep_tarball="no", safe=False, batch=False, directory=".", files=None):
+    if directory != ".":
+        # get current directory
+        dir_run = os.getcwd()
+        # change to the directory
+        os.chdir(directory)
+        # get working directory
+        dir_archive = os.getcwd()
+    else:
+        dir_run = os.getcwd()
+        dir_archive = dir_run
+
     logging.basicConfig(
         filename='archive_{}.log'.format(logtime), level=logging.INFO,
         format='%(asctime)s %(levelname)s: %(message)s',
         datefmt='%m/%d/%Y %H:%M:%S')
+
+    logging.info(f"Running in {dir_run}")
+    logging.info(f"Archiving in {dir_archive}")
+    print(f"Achiving in {dir_archive}")
 
     if not batch:
         check_tmux()
@@ -797,11 +906,14 @@ def archive(delete, keep, keep_config, keep_tarball, safe=False, batch=False):
     if batch and keep_tarball == 'ask':
         logging.critical('"keep_tarball" set to "ask" in batch mode.')
         raise ValueError('You cannot ask about tarball keeping in batch mode.')
-    if batch and keep in ['ask', 'default']:
+    if batch and delete and keep in ['ask', 'default']:
         print('You cannot ask about tarball keeping in batch mode.')
         logging.critical('"keep" set to "ask" or "default" in batch mode.')
-        raise ValueError('You cannot ask about keeping files in batch mode. Valid options for "keep" are "small" or "none"')
-    if keep_config:
+        raise ValueError('You cannot ask about keeping files in batch delete mode. Valid options for "keep" are "small" or "none"')
+
+    if type(keep_config) is dict:
+        settings = keep_config
+    elif keep_config:
         settings = load_config(keep_config)
     else:
         settings = load_config(False)
@@ -809,7 +921,30 @@ def archive(delete, keep, keep_config, keep_tarball, safe=False, batch=False):
     print('Scanning for files')
     logging.info(f'Archiving script v{__version__}')
     logging.info('Scanning directory for files')
-    files = list_files(settings)
+    if files is None:
+        fname_extra = None
+        files = list_files(settings)
+    else:
+        if type(files) is str:
+            fname_extra = files
+            files = [files]
+        elif type(files) is list:
+            if len(files) < 6:
+                fname_extra = '_-_'.join(os.path.basename(x) for x in files)
+            else:
+                fname_extra = f'{len(files)}-files'
+        else:
+            logging.error('Files argument must be a string or list of strings')
+            raise ValueError('Files argument must be a string or list of strings')
+        for file in files:
+            if not os.path.exists(file):
+                logging.error(f'File {file} does not exist.')
+                raise FileNotFoundError(f'File {file} does not exist.')
+            if file[0] == '/':
+                logging.error(f'File {file} is not a relative path.')
+                raise ValueError(f'File {file} is not a relative path.')
+        files = ["./" + str(pathlib.PurePath(file)) for file in files]
+        files = list_files(files, settings)
     logging.info('Done scanning directory for files')
 
     if any(files['kind'] == 'gitdir') and delete:
@@ -843,7 +978,7 @@ def archive(delete, keep, keep_config, keep_tarball, safe=False, batch=False):
         tsm_archive(temp_tarball, archive_info, files, keep_tar=keep_tarball_tf, batch=batch)
         database = '/sc/arion/projects/LOAD/archive/archive.sqlite'
         write_database(database, files, archive_info)
-        write_tables(files, archive_info)
+        write_tables(files, archive_info, fname_extra)
         logging.info('Done')
         if 'removal_failure' in archive_info:
             with open('info_dump.p', 'wb') as pklh:

@@ -26,9 +26,10 @@ if 'snakemake' not in locals():
         '''
         input = {'archive': ['/sc/arion/projects/LOAD/archive/admin/sandbox/' + x
                              for x in ['archive_10-Nov-2023_13.29.log',
-                                       'archive_test_1/archive_dump.p']]
+                                       'archive_test_1/archive_dump.p']]}
         output = ['archive_done.txt']
-        params = {'delete': True}
+        params = {'delete': True,
+                  'directory': '/sc/arion/projects/LOAD/archive/'}
 
 
 # Get the input files (unique inputs)
@@ -74,7 +75,7 @@ if all(f.startswith("/") for f in files):
     if "directory" in locals() and directory_norm != prefix_norm:
         if not re.search("^" + directory_norm, prefix_norm):
             raise ValueError("params['directory'] not in input paths")
-        extra_path = re.sub("^" + directory_norm, "", prefix_norm)
+        extra_path = re.sub("^" + directory_norm + "/", "", prefix_norm)
         files = [os.path.join(extra_path, x) for x in files]
     else:
         directory_norm = prefix_norm

@@ -29,7 +29,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '4.1'
+__version__ = '4.2'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -392,8 +392,11 @@ def exit_code(logname):
     return 0
 
 
-def make_tarball(files, total, batch=False):
-    fullpath = os.path.normpath(os.getcwd())
+def make_tarball(files, total, batch=False, wdir='.',
+                 date_time=None, fname_xtra=None):
+    if wdir == '.':
+        wdir = os.getcwd()
+    fullpath = os.path.normpath(wdir)
     parent = os.path.dirname(fullpath)
     cwd = os.path.basename(fullpath)
     try:
@@ -418,8 +421,11 @@ def make_tarball(files, total, batch=False):
         'total_mib': total
         }
 
-    oo = '{dirname}_{date}.tarball.stdout'.format(dirname=cwd, date=date)
-    eo = '{dirname}_{date}.tarball.stderr'.format(dirname=cwd, date=date)
+    dt = date_time if date_time else date
+    dte = f'{fname_xtra}_{dte}' if fname_xtra else dt
+
+    oo = f'{cwd}_{dte}.tarball.stdout'
+    eo = f'{cwd}_{dte}.tarball.stderr'
 
     tempdir = '/sc/arion/scratch/{}/archiving'.format(username)
     temp_tarball = '{}/{}'.format(tempdir, tarball)
@@ -872,6 +878,9 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no", safe=False,
     else:
         dir_run = os.getcwd()
         dir_archive = dir_run
+    
+    if batch:
+        logtime = datetime.datetime.now().strftime('%d-%b-%Y_%Hh%Mm%Ss%fus')
 
     logging.basicConfig(
         filename='archive_{}.log'.format(logtime), level=logging.INFO,
@@ -955,7 +964,10 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no", safe=False,
     log_sz, sizes = get_sizes(files)
 
     if batch or question('Archive this folder:\n{}?'.format(os.getcwd())):
-        archive_info, temp_tarball = make_tarball(files, sizes['total'], batch)
+        archive_info, temp_tarball = make_tarball(files, sizes['total'], batch,
+                                                  date_time=logtime,
+                                                  fname_xtra=fname_extra,
+                                                  wdir=dir_archive)
         if delete == True:
             files, archive_info = delete_files(files, archive_info, sizes,
                                                log_sz, keep, batch=batch)

@@ -13,7 +13,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Publish Anaconda package to Anaconda.org
-      uses: BEFH/anaconda-publish@v1.5.1
+      uses: BEFH/anaconda-publish@v2.0
       with:
         subDir: 'conda'
         channels: 'conda-forge'

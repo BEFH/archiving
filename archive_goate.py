@@ -29,7 +29,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '4.3'
+__version__ = '4.4'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -584,7 +584,7 @@ def filehash(file, date):
     return hash.hexdigest(8)
 
 
-def file_rm(files, archive_info, sizes, log_sz, keep):
+def file_rm(files, archive_info, sizes, log_sz, keep, logname=None):
     logging.info('Removing files')
     files['removal'] = 'not removed'
     if keep in ['ask', 'default']:
@@ -596,7 +596,7 @@ def file_rm(files, archive_info, sizes, log_sz, keep):
         keep_tf = True
     if keep_tf:
         logging.info('Keeping {} MiB of small files'.format(sizes['kept']))
-        logprint(log_sz)
+        logprint(log_sz, logname)
         archive_info['freed_mib'] = sizes['freed']
         archive_info['kept_mib'] = sizes['kept']
         for file in files[files['keep'] == 'no']['path']:
@@ -632,13 +632,14 @@ def file_rm(files, archive_info, sizes, log_sz, keep):
     return files, archive_info
 
 
-def delete_files(files, archive_info, sizes, log_sz, keep, batch=False):
+def delete_files(files, archive_info, sizes, log_sz, keep,
+                 batch=False, logname=None):
     idx = files[files['filename'] == 'archive_{}.log'.format(logtime)].index
     files.drop(idx, inplace=True)
     if batch or question('Do you still want to remove files after generating archive'):
         try:
             files, archive_info = file_rm(files, archive_info, sizes, log_sz,
-                                          keep)
+                                          keep, logname)
         except:
             logging.exception('Uncaught exception deleting files')
             print("Unexpected error deleting files:", sys.exc_info()[0])
@@ -683,7 +684,7 @@ def delete_no_files(files, archive_info, sizes):
 
 
 def tsm_archive(temp_tarball, archive_info, files=None, attempt=1,
-                keep_tar=False, batch=False, ans_codes=[]):
+                keep_tar=False, batch=False, ans_codes=[], logname=None):
     archive_name = archive_info['archive_name']
     if attempt == 1:
         logging.info('Moving archive tarball')
@@ -701,7 +702,7 @@ def tsm_archive(temp_tarball, archive_info, files=None, attempt=1,
                           ) as dsmc_job:
         for line in dsmc_job.stdout:
             print(line, end='')
-            logprint(line.strip())
+            logprint(line.strip(), logname)
             ans_codes += re.findall(r'ANS\d{4}[WES]', line)
     logging.info('DSMC Job completed')
     warnings = {
@@ -735,10 +736,11 @@ def tsm_archive(temp_tarball, archive_info, files=None, attempt=1,
             logging.info("Trying again.")
             tsm_archive(temp_tarball, archive_info, files,
                         attempt + 1, keep_tar, batch=True,
-                        ans_codes=ans_codes)
+                        ans_codes=ans_codes, logname=logname)
         elif attempt < 4 and question(f'Archiving failed with return {dsmc_job.returncode}. Try again?', False):
             tsm_archive(temp_tarball, archive_info, files,
-                        attempt + 1, keep_tar, ans_codes=ans_codes)
+                        attempt + 1, keep_tar, ans_codes=ans_codes,
+                        logname=logname)
         else:
             ans_codes = list(set(ans_codes))
             ans_codes_n = len(ans_codes)
@@ -766,10 +768,11 @@ def tsm_archive(temp_tarball, archive_info, files=None, attempt=1,
             logging.info("Trying again.")
             tsm_archive(temp_tarball, archive_info, files,
                         attempt + 1, keep_tar, batch=True,
-                        ans_codes=ans_codes)
+                        ans_codes=ans_codes, logname=logname)
         elif attempt < 4 and question(f'Archiving failed with return {dsmc_job.returncode}. Try again?', False):
             tsm_archive(temp_tarball, archive_info, files,
-                        attempt + 1, keep_tar, ans_codes=ans_codes)
+                        attempt + 1, keep_tar, ans_codes=ans_codes,
+                        logname=logname)
         else:
             ans_codes = list(set(ans_codes))
             ans_codes_n = len(ans_codes)
@@ -821,7 +824,7 @@ def write_database(dbpath, files, archive_info):
         logging.info('Done writing to lab archive DB')
 
 
-def write_tables(files, archive_info, fname_extra=None):
+def write_tables(files, archive_info, fname_extra=None, logname=None):
     try:
         if type(fname_extra) is str:
             fname_info = f'archive_info_{fname_extra}_{logtime}.log'
@@ -840,7 +843,7 @@ Original Directory: {archive_directory},
 Total original size (MiB): {total_mib}
 '''.format(**archive_info)
         print(archive_info)
-        logprint(archive_info)
+        logprint(archive_info, logname)
         with open(fname_info, 'w') as ai:
             print(archive_info, file=ai)
     except:
@@ -857,8 +860,9 @@ Total original size (MiB): {total_mib}
         logging.info('Done writing text tables to directory')
 
 
-def logprint(message):
-    with open('archive_{}.log'.format(logtime), 'a') as logfile:
+def logprint(message, logname):
+    logname = f'archive_{logtime}.log' if logname is None else logname
+    with open(logname, 'a') as logfile:
         print('\n{}\n'.format(message), file=logfile)
 
 main_opts = {
@@ -903,8 +907,10 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
     if batch:
         logtime = datetime.datetime.now().strftime('%d-%b-%Y_%Hh%Mm%Ss%fus')
 
+    logname = f'archive_{logtime}.log'
+
     logging.basicConfig(
-        filename='archive_{}.log'.format(logtime), level=logging.INFO,
+        filename=logname, level=logging.INFO,
         format='%(asctime)s %(levelname)s: %(message)s',
         datefmt='%m/%d/%Y %H:%M:%S')
 
@@ -995,7 +1001,8 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
                                                   compression=compression)
         if delete == True:
             files, archive_info = delete_files(files, archive_info, sizes,
-                                               log_sz, keep, batch=batch)
+                                               log_sz, keep, batch=batch,
+                                               logname=logname)
         else:
             files, archive_info = delete_no_files(files, archive_info, sizes)
         if keep_tarball == 'ask' and delete == True:
@@ -1012,10 +1019,11 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
             keep_tarball_tf = True
         else:
             keep_tarball_tf = False
-        tsm_archive(temp_tarball, archive_info, files, keep_tar=keep_tarball_tf, batch=batch)
+        tsm_archive(temp_tarball, archive_info, files, keep_tar=keep_tarball_tf,
+                    batch=batch, logname=logname)
         database = '/sc/arion/projects/LOAD/archive/archive.sqlite'
         write_database(database, files, archive_info)
-        write_tables(files, archive_info, fname_extra)
+        write_tables(files, archive_info, fname_extra, logname)
         logging.info('Done')
         if 'removal_failure' in archive_info:
             with open('info_dump.p', 'wb') as pklh:

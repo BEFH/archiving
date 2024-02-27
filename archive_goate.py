@@ -29,7 +29,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '4.2'
+__version__ = '4.3'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -394,7 +394,7 @@ def exit_code(logname):
 
 def make_tarball(files, total, batch=False, wdir='.',
                  date_time=None, fname_xtra=None,
-                 indiv_files=False):
+                 indiv_files=False, compression=True):
     if wdir == '.':
         wdir = os.getcwd()
     fullpath = os.path.normpath(wdir)
@@ -412,7 +412,7 @@ def make_tarball(files, total, batch=False, wdir='.',
     files['archive_id'] = hash_dtd
     dt = date_time if date_time else date
     dte = f'{fname_xtra}_{dt}' if fname_xtra else dt
-    tarball = f'{cwd}_{dte}.tar.bz2'
+    tarball = f'{cwd}_{dte}.tar.bz2' if compression else f'{cwd}_{dte}.tar'
     username = getpass.getuser()
 
     archive_info = {
@@ -436,39 +436,50 @@ def make_tarball(files, total, batch=False, wdir='.',
         tar_list = cwd
 
     tempdir = '/sc/arion/scratch/{}/archiving'.format(username)
+
+    newtar = test_tar()
+
     temp_tarball = '{}/{}'.format(tempdir, tarball)
-    tar_cmd = 'tar -cvpjf {} -C {} {}'.format(temp_tarball, parent, tar_list)
-    tar_cmd_fast = 'tar c -I"pbzip2 -p24" -f {} -C {} --xattrs --acls {}'
-    tar_cmd_fast = tar_cmd_fast.format(temp_tarball, parent, tar_list)
+    if compression:
+        tar_cmd = 'tar -cvpjf {} -C {} {}'.format(temp_tarball, parent, tar_list)
+        tar_cmd_fast = 'tar c -I"pbzip2 -p24" -f {} -C {} --xattrs {}'
+        tar_cmd_fast = tar_cmd_fast.format(temp_tarball, parent, tar_list)
+    elif newtar:
+        tar_cmd = f'tar -cvpf {temp_tarball} -C {parent} --xattrs {tar_list}'
+    else:
+        tar_cmd = f'tar -cvpf {temp_tarball} -C {parent} {tar_list}'
 
     try:
         not_used = subprocess.run(["pbzip2", "-h"], capture_output=True)
     except FileNotFoundError:
-        pbgzip = False
+        pbzip = False
     else:
         pbzip = True
 
-    newtar = test_tar()
 
     ncore = 1
-    if newtar and pbzip:
-        logging.info("Using pbzip2 to compress in parallel. ACLs and XATTRs recorded.")
+    if not compression:
+        logging.info("Not compressing tarball.")
+        if newtar:
+            logging.info("Using tar to archive with XATTRs.")
+    elif newtar and pbzip:
+        logging.info("Using pbzip2 to compress in parallel. XATTRs recorded.")
         tar_cmd = tar_cmd_fast
         ncore = 24
     elif pbzip:
-        print("Tar is older than v1.28, so multithreading and ACLs are unsupported.")
+        print("Tar is older than v1.28, so multithreading tar_list unsupported.")
         print("Use 'mamba install -c conda-forge tar' to enable features.")
-        logging.warning("Tar is older than 1.28. Using serial compression and no ACLs")
+        logging.warning("Tar is older than 1.28. Using serial compression")
     elif newtar:
         print("Parallel bzip2 missing. Archiving will be slow unless you install")
         print("pbzip2. Use 'mamba install -c conda-forge pbzip2' to enable.")
         logging.warning("pbzip2 is missing. Using slow serial compression.")
     else:
         print("Parallel bzip2 missing and tar is older than v1.28 so multithreading")
-        print("and ACLs are unsupported.")
+        print("is unsupported.")
         print("Use 'mamba install -c conda-forge pbzip2 tar' to enable features.")
         logging.warning("pbzip2 is missing and tar is older than 1.28.")
-        logging.warning("Using slow serial compression and no ACLs.")
+        logging.warning("Using slow serial compression.")
 
     job_cmd = ('bsub -P acc_LOAD -q premium -n {} -R rusage[mem=1000] '
                + '''-R span[hosts=1] -W 140:00 -J {} -oo {} -eo {} '{}' ''')
@@ -863,14 +874,21 @@ main_opts = {
     't': click.option('-t', '--keep-tarball',
         type=click.Choice(['yes', 'no', 'ask'], case_sensitive=False),
         default='ask',
-        help='Keep tarball after archiving')
+        help='Keep tarball after archiving'),
+    'u': click.option('-u', '--uncompressed', is_flag=True, default=False,
+        help='Do not compress tarball with bzip2'),
+    'f': click.option('-f', '--files', multiple=True,
+        help='Files to archive'),
     }
 
 def main_opt_get(k):
     return main_opts[k]
 
 # Template for all command line usage
-def archive(delete, keep="ask", keep_config=None, keep_tarball="no", safe=False, batch=False, directory=".", files=None):
+def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
+            safe=False, batch=False, directory=".", files=None,
+            compression=True):
+    files = files if files else None
     if directory != ".":
         # get current directory
         dir_run = os.getcwd()
@@ -973,7 +991,8 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no", safe=False,
                                                   date_time=logtime,
                                                   fname_xtra=fname_extra,
                                                   wdir=dir_archive,
-                                                  indiv_files=individual_files)
+                                                  indiv_files=individual_files,
+                                                  compression=compression)
         if delete == True:
             files, archive_info = delete_files(files, archive_info, sizes,
                                                log_sz, keep, batch=batch)
@@ -1002,7 +1021,7 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no", safe=False,
             with open('info_dump.p', 'wb') as pklh:
                 pickle.dump(archive_info, pklh)
             exit(1)
-        exit(0)
+        os.chdir(dir_run)
     else:
         logging.info('Exited without archiving')
         exit(0)
@@ -1012,16 +1031,20 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no", safe=False,
 @main_opt_get('k')
 @main_opt_get('K')
 @main_opt_get('t')
-def main(delete, keep, keep_config, keep_tarball):
-    archive(delete, keep, keep_config, keep_tarball)
+@main_opt_get('u')
+@main_opt_get('f')
+def main(delete, keep, keep_config, keep_tarball, uncompressed, files):
+    archive(delete, keep, keep_config, keep_tarball, compression=(not uncompressed), files=files)
 
 @click.command()
 @main_opt_get('d')
 @main_opt_get('k')
 @main_opt_get('K')
 @main_opt_get('t')
-def safe(delete, keep, keep_config, keep_tarball):
-    archive(delete, keep, keep_config, keep_tarball, True)
+@main_opt_get('u')
+@main_opt_get('f')
+def safe(delete, keep, keep_config, keep_tarball, uncompressed, files):
+    archive(delete, keep, keep_config, keep_tarball, True, compression=(not uncompressed), files=files)
 
 if __name__ == '__main__':
     main()

@@ -11,6 +11,7 @@ Usage:
             that differs from the common prefix of the input files],
         delete = [if True, the input files will be deleted after archiving],
         keep = [if 'small', small files will be kept after archiving; optional],
+        compress = [if False, the tarball will not be compressed; optional],
     output: [output file to be touched after archiving]
 '''
 
@@ -24,32 +25,35 @@ if 'snakemake' not in locals():
         '''
         This is a mock class to be used in the snakemake script.
         '''
-        input = {'archive': ['/sc/arion/projects/LOAD/archive/admin/sandbox/' + x
-                             for x in ['archive_10-Nov-2023_13.29.log',
-                                       'archive_test_1/archive_dump.p']]}
+        input = {'archive': ['/sc/arion/projects/load/data-ext/ADSP/ADSP_Umbrella_ng00067.v10/CRAMs/snowball/fromsnowball/distribution/adsp/cram/snd10001/' + x
+                             for x in ['DS-AGEADLT-IRB-PUB/A-ACT-AC003412-BR-NCR-16AD84907_vcpa1.0_DS-AGEADLT-IRB-PUB.cram',
+                                       'DS-AGEADLT-IRB-PUB/A-ACT-AC003412-BR-NCR-16AD84907_vcpa1.0_DS-AGEADLT-IRB-PUB.cram.crai']]}
         output = ['archive_done.txt']
-        params = {'delete': True,
-                  'directory': '/sc/arion/projects/LOAD/archive/'}
+        params = {'delete': False,
+                  'directory': '/sc/arion/projects/load/data-ext/ADSP/ADSP_Umbrella_ng00067.v10/CRAMs/snowball/fromsnowball/distribution/',
+                  'compress': True}
 
 
 # Get the input files (unique inputs)
 files = list(set(snakemake.input['archive']))
 
-if "directory" in snakemake.params:
-    directory = snakemake.params["directory"]
+params = dict(snakemake.params)
+
+if "directory" in params:
+    directory = params["directory"]
     directory_norm = os.path.normpath(directory)
 else:
     directory_norm = "."  # pylint: disable=C0103
 
-if "delete" in snakemake.params:
-    DELETE = snakemake.params["delete"]
+if "delete" in params:
+    DELETE = params["delete"]
     SAFE = False
 else:
     DELETE = False
     SAFE = True
 
-if "keep" in snakemake.params:
-    KEEP = snakemake.params["keep"]
+if "keep" in params:
+    KEEP = params["keep"]
     if DELETE and KEEP not in ("small", "none"):
         raise ValueError("params['keep'] must be 'small' or 'none' if "
                          "params['delete'] is True")
@@ -60,6 +64,11 @@ elif DELETE:
     KEEP = "none"
 else:
     KEEP = "default"
+
+if "compress" in params:
+    COMPRESS = params["compress"]
+else:
+    COMPRESS = True
 
 # Get common prefix
 prefix = os.path.commonprefix([os.path.dirname(x) for x in files])
@@ -84,8 +93,11 @@ elif directory in locals() and directory_norm != '.':
         raise ValueError("params['directory'] not in input paths")
     files = [re.sub("^" + directory_norm + "/", "", x) for x in files]
 
+#import ipdb; ipdb.set_trace()
+
 archive_goate.archive(DELETE, KEEP, safe=SAFE, batch=True,
-                      files=files, directory=directory_norm)
+                      files=files, directory=directory_norm,
+                      compression=COMPRESS)
 
 # Touch output file
 with open(snakemake.output[0], 'w', encoding='utf-8') as f:

@@ -29,7 +29,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '4.5'
+__version__ = '4.6'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -393,6 +393,9 @@ def exit_code(logname, run=1):
     except FileNotFoundError:
         if run < 4:
             time.sleep(5)
+            return exit_code(logname, run + 1)
+        elif run < 7:
+            time.sleep(15)
             return exit_code(logname, run + 1)
         else:
             raise

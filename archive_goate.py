@@ -29,7 +29,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '4.4'
+__version__ = '4.5'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -383,12 +383,19 @@ def test_tar():
     return False
 
 
-def exit_code(logname):
-    with open(logname, 'r') as f:
-        for line in f.readlines():
-            ecodematch = re.search(r'Exited with exit code (\d+)\.', line)
-            if ecodematch:
-                return int(ecodematch.groups()[0])
+def exit_code(logname, run=1):
+    try:
+        with open(logname, 'r') as f:
+            for line in f.readlines():
+                ecodematch = re.search(r'Exited with exit code (\d+)\.', line)
+                if ecodematch:
+                    return int(ecodematch.groups()[0])
+    except FileNotFoundError:
+        if run < 4:
+            time.sleep(5)
+            return exit_code(logname, run + 1)
+        else:
+            raise
     return 0
 
 

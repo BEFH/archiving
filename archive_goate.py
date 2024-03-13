@@ -29,7 +29,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '4.6'
+__version__ = '4.7'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -916,6 +916,8 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
     
     if batch:
         logtime = datetime.datetime.now().strftime('%d-%b-%Y_%Hh%Mm%Ss%fus')
+    else:
+        logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
     logname = f'archive_{logtime}.log'
 

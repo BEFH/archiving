@@ -878,7 +878,7 @@ def logprint(message, logname):
 main_opts = {
     'd': click.option('-d', '--delete', default=False, is_flag=True,
         help='Delete files after confirming'),
-    'k': click.option('-k', '--keep', 
+    'k': click.option('-k', '--keep',
         type=click.Choice(['small', 'none', 'ask', 'default'],
                           case_sensitive=False),
         default='default',
@@ -893,6 +893,8 @@ main_opts = {
         help='Do not compress tarball with bzip2'),
     'f': click.option('-f', '--files', multiple=True,
         help='Files to archive'),
+    'b': click.option('--batch', is_flag=True, default=False,
+        help='Do not ask for user input. Good for loops. Use with caution.')
     }
 
 def main_opt_get(k):
@@ -913,7 +915,7 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
     else:
         dir_run = os.getcwd()
         dir_archive = dir_run
-    
+
     if batch:
         logtime = datetime.datetime.now().strftime('%d-%b-%Y_%Hh%Mm%Ss%fus')
     else:
@@ -932,6 +934,9 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
 
     if not batch:
         check_tmux()
+
+    if type(files) is tuple:
+        files = [x for x in files]
 
     if not delete and keep != 'default':
         print('You must specify "-d" or "--delete" to delete files')
@@ -1045,7 +1050,7 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
     else:
         logging.info('Exited without archiving')
         exit(0)
-        
+
 @click.command()
 @main_opt_get('d')
 @main_opt_get('k')
@@ -1063,8 +1068,9 @@ def main(delete, keep, keep_config, keep_tarball, uncompressed, files):
 @main_opt_get('t')
 @main_opt_get('u')
 @main_opt_get('f')
-def safe(delete, keep, keep_config, keep_tarball, uncompressed, files):
-    archive(delete, keep, keep_config, keep_tarball, True, compression=(not uncompressed), files=files)
+@main_opt_get('b')
+def safe(delete, keep, keep_config, keep_tarball, uncompressed, files, batch):
+    archive(delete, keep, keep_config, keep_tarball, True, batch, compression=(not uncompressed), files=files)
 
 if __name__ == '__main__':
     main()

@@ -21,7 +21,7 @@ This script does the following:
 Install the script and dependancies using the following command:
 
 ```bash
-mamba install -c befh -c conda-forge archive_goate
+mamba install -c bfh -c conda-forge archive_goate
 ```
 
 ## Running the script:

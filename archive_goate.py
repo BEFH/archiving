@@ -29,7 +29,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '4.8'
+__version__ = '4.9'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -336,7 +336,7 @@ def list_files(path='.', settings=load_config(False)):
 
 def check_tmux():
     '''Check that screen or tmux are in use:'''
-    if os.getenv('TERM') != 'screen':
+    if os.getenv('TERM') != 'screen' and 'TMUX' not in os.environ:
         print('We recommend running in screen or tmux.')
         logging.warning('Screen/TMUX session not detected.')
         if question('Quit to run screen or tmux?', True):
@@ -976,7 +976,7 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
     logging.info('Scanning directory for files')
     if files is None:
         fname_extra = None
-        files = list_files(settings)
+        files = list_files(directory, settings)
         individual_files = False
     else:
         if type(files) is str:

@@ -19,6 +19,7 @@ import pwd
 import grp
 import shutil
 import logging
+import psutil
 from itertools import compress, cycle
 
 # packages
@@ -336,12 +337,23 @@ def list_files(path='.', settings=load_config(False)):
 
 def check_tmux():
     '''Check that screen or tmux are in use:'''
-    if os.getenv('TERM') != 'screen' and 'TMUX' not in os.environ:
+    env_var = os.getenv('TERM') == 'screen' or 'TMUX' in os.environ
+    proc = psutil.Process()
+    ps_check = False
+    while proc:
+        try:
+            if re.search(r'(tmux|screen)', proc.name().lower()):
+                ps_check = True
+                break
+            proc = proc.parent()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            break
+    if not (env_var or ps_check):
         print('We recommend running in screen or tmux.')
         logging.warning('Screen/TMUX session not detected.')
         if question('Quit to run screen or tmux?', True):
             logging.error('Quitting because not in Screen or TMUX.')
-            exit(2)
+            sys.exit(2)
 
 
 def get_sizes(files):

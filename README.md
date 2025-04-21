@@ -68,6 +68,23 @@ The script will prompt you to determine how to proceed:
 
 If there are errors during compression or archiving, the script will detect them and ask if you want to proceed, try again or cancel.
 
+### `archive_goate_safe`
+
+`archive_goate_safe` is a version of the script that cannot delete files and can be used in batch mode without prompts. The unused options from `archive_goate` for file deletion are not provided:
+
+```
+Usage: archive_goate_safe [OPTIONS]
+
+Options:
+  -t, --keep-tarball [yes|no|ask]
+                                  Keep tarball after archiving
+  -u, --uncompressed              Do not compress tarball with bzip2
+  -f, --files TEXT                Files to archive
+  --batch                         Do not ask for user input. Good for loops.
+                                  Use with caution.
+  --help                          Show this message and exit.
+```
+
 ### Small files
 
 You can choose to keep small files if you are deleting files while you archive. By default, the following files are kept:

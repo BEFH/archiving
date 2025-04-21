@@ -1062,15 +1062,12 @@ def main(delete, keep, keep_config, keep_tarball, uncompressed, files):
     archive(delete, keep, keep_config, keep_tarball, compression=(not uncompressed), files=files)
 
 @click.command()
-@main_opt_get('d')
-@main_opt_get('k')
-@main_opt_get('K')
 @main_opt_get('t')
 @main_opt_get('u')
 @main_opt_get('f')
 @main_opt_get('b')
-def safe(delete, keep, keep_config, keep_tarball, uncompressed, files, batch):
-    archive(delete, keep, keep_config, keep_tarball, True, batch, compression=(not uncompressed), files=files)
+def safe(keep_tarball, uncompressed, files, batch):
+    archive(False, 'default', None, keep_tarball, True, batch, compression=(not uncompressed), files=files)
 
 if __name__ == '__main__':
     main()

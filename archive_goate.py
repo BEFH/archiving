@@ -356,7 +356,7 @@ def check_tmux():
             sys.exit(2)
 
 
-def get_sizes(files):
+def get_sizes(files, deleting=True):
     files_nobroken = files[files['mode'].notnull()]
     files_nobroken = files_nobroken.astype({'mode': 'int32'})
 
@@ -369,8 +369,9 @@ def get_sizes(files):
     print('The total space taken up by each kind of file is as follows:\n')
     print(kinds)
     print('\n\nThe total size of your directory is {} MiB.'.format(int(total)))
-    print('''If you choose to keep small files, you will free at least {} MiB
-      leaving at most {} MiB.'''.format(int(freed), int(kept)))
+    if deleting:
+        print('''If you choose to keep small files, you will free at least {} MiB
+        leaving at most {} MiB.'''.format(int(freed), int(kept)))
 
     logging_usage = 'File usage by type:\n\n{}'.format(kinds)
 
@@ -1019,7 +1020,7 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
         for gitdir in files[files['kind'] == 'gitdir']['path']:
             git_test_and_prompt(gitdir, batch)
 
-    log_sz, sizes = get_sizes(files)
+    log_sz, sizes = get_sizes(files, delete)
 
     if batch or question('Archive this folder:\n{}?'.format(os.getcwd())):
         archive_info, temp_tarball = make_tarball(files, sizes['total'], batch,

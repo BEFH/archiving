@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 3.1
+# Archiving script Version 5.0
 
 # stdlib
 import os

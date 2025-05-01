@@ -19,6 +19,7 @@ requirements:
     - tar >=1.28
     - pbzip2
     - click
+    - psutil
 
 build:
   number: 0

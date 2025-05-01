@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 5.0
+# Archiving script Version 5.0.1
 
 # stdlib
 import os
@@ -30,7 +30,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '5.0'
+__version__ = '5.0.1'
 
 def get_type(ext, size, settings):
     types = settings['types']

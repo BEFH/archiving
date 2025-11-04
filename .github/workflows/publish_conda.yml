@@ -15,12 +15,13 @@ jobs:
         uses: prefix-dev/rattler-build-action@v0.2.34
         with:
           recipe-path: recipe.yaml
-          build-args: --target-platform linux-64 --no-test --experimental
+          build-args: --target-platform linux-64 --output-dir ./out
+          upload-artifact: false
 
       - name: Upload all packages
         shell: bash
         run: |
-          for pkg in $(find output -type f \( -name "*.conda" -o -name "*.tar.bz2" \) ); do
+          for pkg in $(find out -type f \( -name "*.conda" -o -name "*.tar.bz2" \) ); do
             echo "Uploading ${pkg}"
             rattler-build upload anaconda -o bfh "${pkg}"
           done

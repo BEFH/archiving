@@ -5,11 +5,12 @@ package:
   version: ${{ load_from_file('pyproject.toml')['project']['version'] }}
 
 source:
-  path: .
-  file_name:
-    - archive_goate.py
-    - pyproject.toml
-    - LICENSE
+  - path: .
+    file_name: archive_goate.py
+  - path: .
+    file_name: pyproject.toml
+  - path: .
+    file_name: LICENSE
 
 build:
   script: python -m pip install . -vv --no-deps --no-build-isolation

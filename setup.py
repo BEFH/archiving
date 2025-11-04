@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='archive_goate',
-    version='5.0.1',
+    version='5.0.2',
     description='Automatic backup script for goate lab.',
     long_description=('Using DSMC to back up files is somewhat complicated and\n'
                       'it\'s difficult to track what files and directories\n'
@@ -21,11 +21,12 @@ setup(
         'Intended Audience :: Science/Research',
         'Topic :: Scientific/Engineering',
         'License :: OSI Approved :: MIT License',
-        'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
+        'Programming Language :: Python :: 3.14',
         'Operating System :: POSIX :: Linux',
     ],
     install_requires=['pytz','pandas','click', 'psutil'],

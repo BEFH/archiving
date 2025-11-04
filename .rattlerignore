@@ -1,0 +1,11 @@
+.git/
+.github/
+output/
+out/
+__pycache__/
+*.pyc
+.pytest_cache/
+.vscode/
+.idea/
+conda/
+.DS_Store

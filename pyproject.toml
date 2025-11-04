@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "archive_goate"
+version = "5.0.3"
+description = "Automatic backup script for goate lab."
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Brian Fulton-Howard", email = "brian.fulton-howard@mssm.edu"}
+]
+keywords = ["archive", "Linux", "TSM", "dsmc", "tar"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: POSIX :: Linux",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "pytz",
+    "pandas",
+    "click",
+    "psutil"
+]
+
+[project.urls]
+Homepage = "https://github.com/BEFH/archiving"
+
+[project.scripts]
+archive_goate = "archive_goate:main"
+archive_goate_safe = "archive_goate:safe"
+
+[tool.setuptools]
+py-modules = ["archive_goate"]

@@ -1,0 +1,54 @@
+schema_version: 1
+
+package:
+  name: archive_goate
+  version: ${{ load_from_file('pyproject.toml')['project']['version'] }}
+
+source:
+  path: .
+
+build:
+  script: python -m pip install . -vv --no-deps --no-build-isolation
+  number: 0
+
+requirements:
+  build:
+    - python
+    - pip
+    - setuptools
+    - wheel
+  host:
+    - python
+    - pip
+    - setuptools
+    - wheel
+  run:
+    - python >=3.9
+    - pytz
+    - pandas
+    - click
+    - psutil
+    - tar >=1.28
+    - pbzip2
+
+tests:
+  - python:
+      imports:
+        - archive_goate
+
+about:
+  homepage: https://github.com/BEFH/archiving
+  repository: https://github.com/BEFH/archiving
+  documentation: https://github.com/marcoralab/archiving
+  license: MIT
+  license_file: LICENSE
+  summary: Automatic backup script for goate lab.
+  description: |
+    Using DSMC to back up files is somewhat complicated and it's difficult to track
+    what files and directories have been archived in the lab. This script automates
+    the process of archiving, stores information about the archive, and stores info
+    across users for the entire lab.
+
+extra:
+  recipe-maintainers:
+    - BEFH

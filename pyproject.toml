@@ -7,7 +7,7 @@ name = "archive_goate"
 version = "5.0.3"
 description = "Automatic backup script for goate lab."
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 license-files = ["LICENSE"]
 authors = [
     {name = "Brian Fulton-Howard", email = "brian.fulton-howard@mssm.edu"}

@@ -15,7 +15,7 @@ jobs:
         uses: prefix-dev/rattler-build-action@v0.2.34
         with:
           recipe-path: recipe.yaml
-          build-args: --target-platform linux-64 --experimental --output-dir ./out -vvv
+          build-args: --experimental -vvv
           upload-artifact: false
 
       - name: Upload all packages

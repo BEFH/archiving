@@ -6,10 +6,18 @@ package:
 
 source:
   path: .
-  use_gitignore: true
+  filter:
+    - archive_goate.py
+    - pyproject.toml
+    - LICENSE
 
 build:
-  script: pip install . -v
+  noarch: python
+  script: pip install --prefix=$PREFIX .
+  python:
+    entry_points:
+      - archive_goate = archive_goate:main
+      - archive_goate_safe = archive_goate:safe
   number: 0
 
 requirements:
@@ -33,9 +41,12 @@ requirements:
     - pbzip2
 
 tests:
+  - python:
+      imports:
+          - archive_goate
   - script:
-      - python -c "import archive_goate; print('Import successful')"
       - archive_goate --help
+      - archive_goate_safe --help
 
 about:
   homepage: https://github.com/BEFH/archiving

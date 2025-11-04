@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 5.0.1
+# Archiving script Version 5.0.2
 
 # stdlib
 import os
@@ -30,7 +30,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '5.0.1'
+__version__ = '5.0.2'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -406,11 +406,21 @@ def exit_code(logname, run=1):
     except FileNotFoundError:
         if run < 4:
             time.sleep(5)
+            sec_wait = run * 5
+            logging.warning(f"waited {sec_wait} sec for lsf logs...")
             return exit_code(logname, run + 1)
         elif run < 7:
             time.sleep(15)
+            sec_wait = (run - 3) * 15
+            logging.warning(f"waited {sec_wait} sec for lsf logs...")
+            return exit_code(logname, run + 1)
+        elif run < 16:
+            time.sleep(60)
+            min_wait = (run - 6)
+            logging.warning(f"waited {min_wait} min for lsf logs...")
             return exit_code(logname, run + 1)
         else:
+            logging.error(f"LSF logs were not found!")
             raise
     return 0
 
@@ -521,23 +531,37 @@ def make_tarball(files, total, batch=False, wdir='.',
         job = re.search(job_expression, archive_job.stdout.decode())[0]
         completed = False
         spinner = cycle(['◐', '◓', '◑', '◒'])
-        print("Waiting to check job.", end='\r')
+        print("Waiting to check job.", end='\r', flush=True)
+        bjob_tries = 0
         while not completed:
             time.sleep(5)
-            jobstat = subprocess.run(
+            jobstat_ret = subprocess.run(
                 'bjobs -do "stat" -noheader {}'.format(job),
                 capture_output=True, shell=True)
-            jobstat = jobstat.stdout.decode().strip()
-            if jobstat == 'PEND':
+            jobstat = jobstat_ret.stdout.decode().strip()
+            if not jobstat:
+                bjob_tries += 1
+                stderr_bjobs = jobstat_ret.stderr.decode().strip()
+                logging.warning(f"bjobs failed with code {jobstat_ret.returncode}")
+                if stderr_bjobs:
+                    logging.warning(f"stderr: {stderr_bjobs}")
+                else:
+                    logging.warning("bjobs stderr is empty")
+                if bjob_tries > 12:
+                    logging.error("exiting after 12 attempts to determine job status")
+                    raise TimeoutError(f"Timed out waiting for bjobs output for job {job}.")
+                statmsg = "Waiting for bjobs... {}".format(next(spinner))
+                print(statmsg, end='\r', flush=True)
+            elif jobstat == 'PEND':
                 statmsg = "Tar job is pending... {}".format(next(spinner))
-                print(statmsg, end='\r')
+                print(statmsg, end='\r', flush=True)
             elif jobstat == 'RUN':
                 statmsg = "Tar job is running... {}".format(next(spinner))
-                print(statmsg, end='\r')
+                print(statmsg, end='\r', flush=True)
             else:
                 statmsg = "Tar job has completed.   "
                 print(statmsg, end='\n')
-            completed = jobstat not in ['RUN', 'PEND']
+            completed = jobstat not in {'RUN', 'PEND'}
 
         tar_code = exit_code(oo)
         if jobstat != 'EXIT' and tar_code == 0:
@@ -1072,6 +1096,7 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
 @main_opt_get('u')
 @main_opt_get('f')
 def main(delete, keep, keep_config, keep_tarball, uncompressed, files):
+    sys.stdout.reconfigure(line_buffering=True)
     archive(delete, keep, keep_config, keep_tarball, compression=(not uncompressed), files=files)
 
 @click.command()
@@ -1080,6 +1105,7 @@ def main(delete, keep, keep_config, keep_tarball, uncompressed, files):
 @main_opt_get('f')
 @main_opt_get('b')
 def safe(keep_tarball, uncompressed, files, batch):
+    sys.stdout.reconfigure(line_buffering=True)
     archive(False, 'default', None, keep_tarball, True, batch, compression=(not uncompressed), files=files)
 
 if __name__ == '__main__':

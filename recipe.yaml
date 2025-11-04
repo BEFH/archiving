@@ -7,6 +7,7 @@ package:
 source:
   - file: archive_goate.py
   - file: pyproject.toml
+  - file: LICENSE
 
 build:
   script: python -m pip install . -vv --no-deps --no-build-isolation
@@ -33,9 +34,9 @@ requirements:
     - pbzip2
 
 tests:
-  - python:
-      imports:
-        - archive_goate
+  - script:
+      - python -c "import archive_goate; print('Import successful')"
+      - archive_goate --help
 
 about:
   homepage: https://github.com/BEFH/archiving

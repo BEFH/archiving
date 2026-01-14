@@ -1,8 +1,9 @@
 #!/usr/bin/env python
-# Archiving script Version 5.0.3
+# Archiving script Version 6.0.0
 
 # stdlib
 import os
+import grp
 import pathlib
 import subprocess
 import termios
@@ -20,7 +21,10 @@ import grp
 import shutil
 import logging
 import psutil
+import json
 from itertools import compress, cycle
+from sqlalchemy import create_engine, types
+from sqlalchemy.exc import SQLAlchemyError
 
 # packages
 import pytz
@@ -30,7 +34,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '5.0.3'
+__version__ = '6.0.0'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -848,24 +852,65 @@ def tsm_archive(temp_tarball, archive_info, files=None, attempt=1,
         os.remove(archive_name)
 
 
-def write_database(dbpath, files, archive_info):
+def write_database(creds: str, files: pd.DataFrame, archive_info: dict):
+    with open(creds, 'r') as dbf:
+        db = json.load(dbf)
+    db["u_p"] = f"{db['USER']}:{db['PASSWORD']}"
+    db["host"] = "data1.hpc.mssm.edu:3306"
+    db["addr"] = f"mysql+pymysql://{db['u_p']}@{db['host']}/{db['DBNAME']}"
+
+    FILES_DTYPE = {
+        'file_id': types.String(16),
+        'archive_id': types.String(16),
+        'filename': types.String(255),
+        'path': types.String(1000),
+        'extension': types.String(64),
+        'kind': types.String(15),
+        'kept': types.String(15),
+        'directory': types.Boolean,
+        'size_mib': types.Float,
+        'mode': types.Float,
+        'POSIX_user': types.String(16),
+        'POSIX_group': types.String(16),
+        'time_modified': types.DateTime,
+        'removal': types.String(16)
+    }
+
+    ARCHIVE_DTYPE = {
+        'archive_id': types.String(16),
+        'user_name': types.String(16),
+        'time': types.DateTime,
+        'archive_name': types.String(255),
+        'archive_directory': types.String(500),
+        'total_mib': types.Float,
+        'freed_mib': types.Float,
+        'kept_mib': types.Float
+    }
+
     try:
         if 'removal_failure' in archive_info:
             del archive_info['removal_failure']
         logging.info('Writing to lab archive DB')
-        engine = sqlite3.connect(dbpath)
-        files.to_sql('file', con=engine, if_exists="append", index=False)
-        archive_info = pd.DataFrame(archive_info, [0])
-        archive_info.to_sql('archive', con=engine,
-                            if_exists="append", index=False)
-    except:
+        engine = create_engine(db["addr"], echo=False, pool_recycle=3600)
+        archive_df = pd.DataFrame(archive_info, [0])
+        mappings = {'user': 'POSIX_user',
+                    'group': 'POSIX_group',
+                    'keep': 'kept'}
+        with engine.begin() as conn:
+            archive_df.to_sql('archive', con=conn, if_exists='append',
+                              index=False, dtype=ARCHIVE_DTYPE)
+            files.rename(columns=mappings).to_sql(
+                'file', con=conn, if_exists='append',
+                index=False, dtype=FILES_DTYPE)
+    except SQLAlchemyError as e:
+        # Dump for debugging
         with open('archive_dump.p', 'wb') as pklh:
             pickle.dump(files, pklh)
         archive_info['exception'] = 'db'
         with open('info_dump.p', 'wb') as pklh:
             pickle.dump(archive_info, pklh)
         logging.exception('Exception writing to lab DB')
-        print("Unexpected error archiving files:", sys.exc_info()[0])
+        print("Unexpected error archiving files:", e)
         print("Please contact Brian at brian.fulton-howard@mssm.edu!")
     else:
         logging.info('Done writing to lab archive DB')
@@ -941,6 +986,9 @@ def main_opt_get(k):
 def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
             safe=False, batch=False, directory=".", files=None,
             compression=True):
+    goateuser = "goatea01a" in {g.gr_name for g in grp.getgrall() if os.getlogin() in g.gr_mem}
+    if not goateuser:
+        raise PermissionError("This script is for the Goate Lab only!")
     files = files if files else None
     if directory != ".":
         # get current directory
@@ -1075,8 +1123,8 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
             keep_tarball_tf = False
         tsm_archive(temp_tarball, archive_info, files, keep_tar=keep_tarball_tf,
                     batch=batch, logname=logname)
-        database = '/sc/arion/projects/LOAD/archive/archive.sqlite'
-        write_database(database, files, archive_info)
+        creds = '/sc/arion/projects/LOAD/archive/archive_creds.json'
+        write_database(creds, files, archive_info)
         write_tables(files, archive_info, fname_extra, logname)
         logging.info('Done')
         if 'removal_failure' in archive_info:

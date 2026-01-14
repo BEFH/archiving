@@ -29,8 +29,8 @@ dependencies = [
     "pytz",
     "pandas",
     "click",
-    "psutil"
-    "sqlalchemy",
+    "psutil",
+    "sqlalchemy"
 ]
 
 [project.urls]

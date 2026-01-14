@@ -33,6 +33,7 @@ requirements:
     - wheel
   run:
     - python >=3.10
+    - sqlalchemy
     - pytz
     - pandas
     - click

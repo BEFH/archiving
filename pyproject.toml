@@ -30,6 +30,7 @@ dependencies = [
     "pandas",
     "click",
     "psutil"
+    "sqlalchemy",
 ]
 
 [project.urls]

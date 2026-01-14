@@ -16,12 +16,16 @@ def mtime(path):
     path = os.path.join(ARCHIVE_DIR, path)
     return os.stat(path).st_mtime
 
-def is_friday(ts):
+def is_fri(ts):
     return datetime.fromtimestamp(ts).weekday() == 4
 
-def is_last_friday(ts):
+def is_lfri(ts):
     d = datetime.fromtimestamp(ts)
     return d.weekday() == 4 and (d + timedelta(days=7)).month != d.month
+
+def keepif(keep, key, f, condext=True):
+    if key not in keep or condext:
+        keep[key] = f
 
 @click.command()
 def main():
@@ -39,19 +43,15 @@ def main():
         age_days = int((NOW - ts) / 86400)
         d = datetime.fromtimestamp(ts)
 
-        key = None
         if age_days <= 3:
             keep[('all', d.strftime('%Y-%m-%d_%H:%M'))] = f
             continue
         elif age_days <= 14:
-            key = ('daily', d.strftime('%Y-%m-%d'))
-        elif age_days <= 48 and is_friday(ts):
-            key = ('weekly', d.strftime('%G-%V'))
-        elif age_days > 48 and is_last_friday(ts):
-            key = ('monthly', d.strftime('%Y-%m'))
-
-        if key and key not in keep:
-            keep[key] = f
+            keepif(keep, ('daily', d.strftime('%Y-%m-%d')), f)
+        elif age_days <= 48:
+            keepif(keep, ('weekly', d.strftime('%G-%V')), f, is_fri(ts))
+        elif age_days > 48:
+            keepif(keep, ('monthly', d.strftime('%Y-%m')), f, is_lfri(ts))
 
     to_delete_file = [f for f in files if f not in keep.values()]
 

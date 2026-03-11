@@ -40,6 +40,7 @@ requirements:
     - psutil
     - tar >=1.28
     - pbzip2
+    - pymysql
 
 tests:
   - python:

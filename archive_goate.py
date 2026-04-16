@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 6.1
+# Archiving script Version 6.2
 
 # stdlib
 import os
@@ -1014,7 +1014,7 @@ main_opts = {
     'f': click.option('-f', '--files', multiple=True,
         help='Files to archive'),
     'b': click.option('--batch', is_flag=True, default=False,
-        help='Do not ask for user input. Good for loops. Use with caution.')
+        help='Do not ask for user input. Good for loops. Use with caution.'),
     'c': click.option('-c', '--check-db', is_flag=True, default=False,
         help='Exit early if directory already archived in db')
     }

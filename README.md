@@ -52,11 +52,14 @@ Options:
                                   Keep tarball after archiving
   -u, --uncompressed              Do not compress tarball with bzip2
   -f, --files TEXT                Files to archive
+  -c, --check-db                  Exit early if directory already archived in
+                                  db
   --help                          Show this message and exit.
 ```
 
 The script will prompt you to determine how to proceed:
 
+1.  If you have specified `-c` or `--check-db`, the script will check if the directory is already in the archive db and exit if it already exists.
 1.  The script will normally scan your current directory for files and archive everything. If you have large files in the directory and want to archive specific files, you can use `-f` or `--files`, one time for each file.
 1.  If you are not using screen or tmux, it will ask you if you want to quit and use either one.
 1.  If any unsaved changes exist in git tracked directories and have specified `-d` or `--delete` on the command line, it will show the status and ask if you want to quit to commit/push changes
@@ -80,6 +83,8 @@ Options:
                                   Keep tarball after archiving
   -u, --uncompressed              Do not compress tarball with bzip2
   -f, --files TEXT                Files to archive
+  -c, --check-db                  Exit early if directory already archived in
+                                  db
   --batch                         Do not ask for user input. Good for loops.
                                   Use with caution.
   --help                          Show this message and exit.

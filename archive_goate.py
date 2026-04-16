@@ -23,7 +23,7 @@ import logging
 import psutil
 import json
 from itertools import compress, cycle
-from sqlalchemy import create_engine, types
+from sqlalchemy import create_engine, types, text, bindparam
 from sqlalchemy.exc import SQLAlchemyError
 
 # packages
@@ -34,7 +34,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '6.1'
+__version__ = '6.2'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -952,6 +952,44 @@ Total original size (MiB): {total_mib}
         logging.info('Done writing text tables to directory')
 
 
+def check_archived(creds: str, directory: str = '.') -> bool:
+    with open(creds, 'r') as dbf:
+        db = json.load(dbf)
+    db["u_p"] = f"{db['USER']}:{db['PASSWORD']}"
+    db["host"] = "data1.hpc.mssm.edu:3306"
+    db["addr"] = f"mysql+pymysql://{db['u_p']}@{db['host']}/{db['DBNAME']}"
+    engine = create_engine(db["addr"], echo=False, pool_recycle=3600)
+    cwd = pathlib.Path(directory).resolve()
+    highpaths = [str(x) for x
+                 in pathlib.Path('/sc/arion/projects/load/users').parents]
+    highpaths.append('/sc/arion/projects/LOAD/')
+    candidates = [str(cwd)] + [str(p) for p in cwd.parents
+                               if str(p) not in highpaths]
+    with engine.begin() as conn:
+        query = text("""
+            SELECT archive_directory, archive_id
+            FROM archive
+            WHERE archive_directory IN :paths
+        """).bindparams(bindparam("paths", expanding=True))
+        df_archive = pd.read_sql(query, conn,
+                                 params={"paths": candidates})
+        if len(df_archive) == 0:
+            return False
+        if str(cwd) in list(df_archive.archive_directory):
+            return True
+        ids = tuple(df_archive.archive_id)
+        pathslike = tuple("path LIKE './" + str(cwd.relative_to(p)) + "%'"
+                          for p in list(df_archive.archive_directory))
+        query = text(f"""
+            SELECT 1
+            FROM file
+            WHERE archive_id IN :ids AND ({" OR ".join(pathslike)})
+            LIMIT 1
+        """).bindparams(bindparam("ids", expanding=True))
+        result = conn.execute(query, {"ids": ids}).first()
+        return result is not None
+
+
 def logprint(message, logname):
     logname = f'archive_{logtime}.log' if logname is None else logname
     with open(logname, 'a') as logfile:
@@ -977,6 +1015,8 @@ main_opts = {
         help='Files to archive'),
     'b': click.option('--batch', is_flag=True, default=False,
         help='Do not ask for user input. Good for loops. Use with caution.')
+    'c': click.option('-c', '--check-db', is_flag=True, default=False,
+        help='Exit early if directory already archived in db')
     }
 
 def main_opt_get(k):
@@ -985,7 +1025,7 @@ def main_opt_get(k):
 # Template for all command line usage
 def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
             safe=False, batch=False, directory=".", files=None,
-            compression=True):
+            compression=True, check_db=False):
     goateuser = "goatea01a" in {g.gr_name for g in grp.getgrall() if os.getlogin() in g.gr_mem}
     if not goateuser:
         raise PermissionError("This script is for the Goate Lab only!")
@@ -1056,6 +1096,12 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
     else:
         settings = load_config(False)
 
+    creds = '/sc/arion/projects/LOAD/archive/archive_creds.json'
+    if check_db and check_archived(creds, directory):
+        print("Already archived. Nothing to do.")
+        logging.info("Already archived. Exiting without archiving due to --check-db.")
+        exit(0)
+
     print('Scanning for files')
     logging.info(f'Archiving script v{__version__}')
     logging.info('Scanning directory for files')
@@ -1123,7 +1169,6 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
             keep_tarball_tf = False
         tsm_archive(temp_tarball, archive_info, files, keep_tar=keep_tarball_tf,
                     batch=batch, logname=logname)
-        creds = '/sc/arion/projects/LOAD/archive/archive_creds.json'
         write_database(creds, files, archive_info)
         write_tables(files, archive_info, fname_extra, logname)
         logging.info('Done')
@@ -1143,18 +1188,22 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
 @main_opt_get('t')
 @main_opt_get('u')
 @main_opt_get('f')
-def main(delete, keep, keep_config, keep_tarball, uncompressed, files):
+@main_opt_get('c')
+def main(delete, keep, keep_config, keep_tarball, uncompressed, files, check_db):
     sys.stdout.reconfigure(line_buffering=True)
-    archive(delete, keep, keep_config, keep_tarball, compression=(not uncompressed), files=files)
+    archive(delete, keep, keep_config, keep_tarball, compression=(not uncompressed),
+            files=files, check_db=check_db)
 
 @click.command()
 @main_opt_get('t')
 @main_opt_get('u')
 @main_opt_get('f')
 @main_opt_get('b')
-def safe(keep_tarball, uncompressed, files, batch):
+@main_opt_get('c')
+def safe(keep_tarball, uncompressed, files, batch, check_db):
     sys.stdout.reconfigure(line_buffering=True)
-    archive(False, 'default', None, keep_tarball, True, batch, compression=(not uncompressed), files=files)
+    archive(False, 'default', None, keep_tarball, True, batch, compression=(not uncompressed),
+            files=files, check_db=check_db)
 
 if __name__ == '__main__':
     main()

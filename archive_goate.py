@@ -1016,7 +1016,7 @@ main_opts = {
     'b': click.option('--batch', is_flag=True, default=False,
         help='Do not ask for user input. Good for loops. Use with caution.')
     'c': click.option('-c', '--check-db', is_flag=True, default=False,
-        help='Exit early if directory already archived in db.')
+        help='Exit early if directory already archived in db')
     }
 
 def main_opt_get(k):

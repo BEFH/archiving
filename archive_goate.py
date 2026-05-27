@@ -34,7 +34,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '6.2'
+__version__ = '7.0'
 
 def get_type(ext, size, settings):
     types = settings['types']

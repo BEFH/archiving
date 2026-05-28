@@ -468,12 +468,6 @@ def make_archfile(files, total, batch=False, wdir='.',
         'total_mib': total
         }
 
-    if indiv_files:
-        file_list_ = [os.path.join(cwd, x) for x in files['path']]
-        file_list = ' '.join(file_list_)
-    else:
-        file_list = cwd
-
     tempdir = '/sc/arion/scratch/{}/archiving'.format(username)
     tempdir_path = pathlib.Path(tempdir)
     pathlib.Path.mkdir(tempdir_path, parents=True, exist_ok=True)
@@ -486,9 +480,17 @@ def make_archfile(files, total, batch=False, wdir='.',
     jobstem = f'{cwd}_{dte}'
 
     if squashfs:
-        make_squashfs(file_list, temp_arcfile, jobstem, compression, batch)
+        wd_use = fullpath
+        arcfunc = make_squashfs
     else:
-        make_tarball(file_list, temp_arcfile, jobstem, compression, batch, parent)
+        wd_use = cwd
+        arcfunc = make_tarball
+    if indiv_files:
+        file_list_ = [os.path.join(wd_use, x) for x in files['path']]
+        file_list = ' '.join(file_list_)
+    else:
+        file_list = wd_use  
+    arcfunc(file_list, temp_arcfile, jobstem, compression, batch, parent)
 
     return archive_info, temp_arcfile
 
@@ -542,13 +544,13 @@ def make_tarball(file_list, temp_arcfile, jobstem, compression, batch, parent):
 
     return temp_arcfile
 
-def make_squashfs(file_list, temp_arcfile, jobstem, compression, batch):
+def make_squashfs(file_list, temp_arcfile, jobstem, compression, batch, parent):
     jobname = f'{jobstem}.squashfs'
     if compression in [True, "fast"]:
-        extra_args = '-comp lz4 -b 1M -processors 64'
+        extra_args = '-comp lz4 -b 1M -processors 64 -block-readers 32'
         ncore = 64
     elif compression == "max":
-        extra_args = '-comp lz4 -b 1M -processors 64 -Xhc'
+        extra_args = '-comp lz4 -b 1M -processors 64 -block-readers 32 -Xhc'
         ncore = 64
     else:
         extra_args = '-no-compression -b 1M -processors 12'
@@ -560,21 +562,26 @@ def make_squashfs(file_list, temp_arcfile, jobstem, compression, batch):
         logging.warning("Falling back to mksquashfs in $PATH")
     mksquashfs_cmd = f'{mksquashfs_exe} {file_list} {temp_arcfile} {extra_args}'
     submit_arcjob(mksquashfs_cmd, jobname, ncore, temp_arcfile,
-                  batch, kind='SquashFS', attempts = 2)
+                  batch, kind='SquashFS', attempts = 2, mem=4000)
     
 
 def submit_arcjob(arc_cmd, jobname, ncore, temp_arcfile,
-                   batch=False, kind='Tar', attempts = 4):
+                   batch=False, kind='Tar', attempts = 4,
+                   mem=1000):
     oo = f'{jobname}.stdout'
     eo = f'{jobname}.stderr'
-    job_cmd = ('bsub -P acc_LOAD -q premium -n {} -R rusage[mem=1000] '
+    job_cmd = ('bsub -P acc_LOAD -q premium -n {} -R rusage[mem={}] '
                + '''-R span[hosts=1] -W 140:00 -J {} -oo {} -eo {} '{}' ''')
-    job_cmd = job_cmd.format(ncore, jobname, oo, eo, arc_cmd)
+    job_cmd = job_cmd.format(ncore, mem, jobname, oo, eo, arc_cmd)
 
     arc_incomplete = True
     arc_attempt = 1
 
     while arc_incomplete and (attempts == 1 or arc_attempt <= attempts):
+        if arc_attempt > 1 and kind == 'SquashFS':
+            logging.warning(f"Deleting incomplete archive file {temp_arcfile} before retrying.")
+            if os.path.exists(temp_arcfile):
+                os.remove(temp_arcfile)
         archive_job = subprocess.run(job_cmd, capture_output=True, shell=True)
         print(archive_job.stdout.decode())
         print(archive_job.stderr.decode())

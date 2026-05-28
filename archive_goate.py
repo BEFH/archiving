@@ -277,7 +277,7 @@ def question(text, default=None, prepend='', batch=False, default_batch=None):
 
 
 def load_config(configfile):
-    if os.path.isfile(configfile):
+    if configfile and os.path.isfile(configfile):
         import yaml
         with open(configfile, 'r') as conf:
             settings = yaml.safe_load(conf)
@@ -300,7 +300,7 @@ def load_config(configfile):
     return settings
 
 
-def scantree(path, settings=load_config(False)):
+def scantree(path, settings=load_config(None)):
     '''Recursively yield DirEntry objects for given directory.'''
     for entry in os.scandir(path):
         if entry.is_dir(follow_symlinks=False):
@@ -311,7 +311,7 @@ def scantree(path, settings=load_config(False)):
             yield getinfo(entry, settings)
 
 
-def scanfiles(paths='.', settings=load_config(False)):
+def scanfiles(paths='.', settings=load_config(None)):
     '''Recursively yield DirEntry objects for given directories and files.'''
     if type(paths) is str:
         paths = [paths]
@@ -324,7 +324,7 @@ def scanfiles(paths='.', settings=load_config(False)):
         else:
             yield getinfo(path, settings)
 
-def list_files(path='.', settings=load_config(False)):
+def list_files(path='.', settings=load_config(None)):
     files = [x for x in scanfiles(path, settings) if x is not None]
     files = pd.DataFrame.from_records(files)
     files['user'] = [pwd.getpwuid(int(x))[0]
@@ -1145,7 +1145,7 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
     elif keep_config:
         settings = load_config(keep_config)
     else:
-        settings = load_config(False)
+        settings = load_config(None)
 
     creds = '/sc/arion/projects/LOAD/archive/archive_creds.json'
     if check_db and check_archived(creds, directory):

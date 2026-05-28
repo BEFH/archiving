@@ -553,7 +553,7 @@ def make_squashfs(file_list, temp_arcfile, jobstem, compression, batch):
     else:
         extra_args = '-no-compression -b 1M -processors 12'
         ncore = 12
-    mksquashfs_exe = "/sc/arion/projects/load/apps/squashfs-tools/4.7.5_lvl7/bin/mksquashfs"
+    mksquashfs_exe = "/sc/arion/projects/load/etc/packages/squashfs-tools/4.7.5_lvl7/bin/mksquashfs"
     if not os.path.isfile(mksquashfs_exe):
         logging.warning(f"mksquashfs executable not found at {mksquashfs_exe}")
         mksquashfs_exe = "mksquashfs"

@@ -2,21 +2,21 @@
 
 This script does the following:
 
-*  Checks if the directory is ready to archive:
-   *  Makes sure you are using screen or tmux so that the archiving doesn't fail if you get disconnected
-   *  Checks if there are uncommitted or local changes to any git repositories
-*  Compresses all of the files in the current directory into a tarball.
-   *  Uses a parallelized cluster job for speed
-   *  Uses the user's scratch directory to conserve space
-   *  Checks that the archiving was successful and reruns if necessary
-*  *Optionally* deletes either all files or all large files after creating the tarball to save space on the server.
-*  Archives the tarball to tape using the dsmc command
-*  Deletes the tarball (optional)
-*  Saves the list of archived files along with which ones were deleted, sizes, and permissions to a TSV file in the directory and to a lab database
-   *  Also records who did the archiving, the date and time of archiving and the current path to a log file and the database
-*  Saves an extensive log file of the archiving operations
-   
-## Installing the script:
+* Checks if the directory is ready to archive:
+  * Makes sure you are using screen or tmux so that the archiving doesn't fail if you get disconnected
+  * Checks if there are uncommitted or local changes to any git repositories
+* Compresses all of the files in the current directory into a tarball or squashfs archive.
+  * Uses a parallelized cluster job for speed
+  * Uses the user's scratch directory to conserve space (or builds the archive in-place for speed with `--inplace`)
+  * Checks that the archiving was successful and reruns if necessary
+* *Optionally* deletes either all files or all large files after creating the tarball to save space on the server.
+* Writes the archive to tape using the dsmc command
+* Deletes the tarball (optional)
+* Saves the list of archived files along with which ones were deleted, sizes, and permissions to a TSV file in the directory and to a lab database
+  * Also records who did the archiving, the date and time of archiving and the current path to a log file and the database
+* Saves an extensive log file of the archiving operations
+
+## Installing the script
 
 Install the script and dependancies using the following command:
 
@@ -24,21 +24,21 @@ Install the script and dependancies using the following command:
 mamba install -c bfh -c conda-forge archive_goate
 ```
 
-## Running the script:
+## Running the script
 
 First, make sure you are using `screen` or `tmux` so that the archiving doesn't fail if you get disconnected.
 
 ***NOTE:*** `dsmc` only works on the login nodes, so make sure you are not in an `lsf` job when using the script. That means no `ijob`, no `regjob`, no `bsub`, etc.
 
-1.  To start a new `screen` session, run `screen` from the command line
-2.  To detach from your session, press `Ctrl+a` then press `d`
-3.  To resume your session if you are disconnected or detach, run `screen -r` from the command line
+1. To start a new `screen` session, run `screen` from the command line
+2. To detach from your session, press `Ctrl+a` then press `d`
+3. To resume your session if you are disconnected or detach, run `screen -r` from the command line
 
 You can type `archive_goate` in the directory you want to archive. If you definitely don't want to delete files and you want a safe script, run `archive_goate_safe`.
 
 The scripts now take arguments for what you want to do during the archiving process:
 
-```
+```text
 Usage: archive_goate [OPTIONS]
 
 Options:
@@ -51,6 +51,11 @@ Options:
   -t, --keep-tarball [yes|no|ask]
                                   Keep tarball after archiving
   -u, --uncompressed              Do not compress tarball with bzip2
+  -s, --squashfs [no|max|fast|uncompressed]
+                                  Use squashfs with maximum, fast, or without
+                                  lz4 (default is no squashfs)
+  -i, --inplace                   Create tarball in current directory instead
+                                  of temp directory
   -f, --files TEXT                Files to archive
   -c, --check-db                  Exit early if directory already archived in
                                   db
@@ -59,15 +64,15 @@ Options:
 
 The script will prompt you to determine how to proceed:
 
-1.  If you have specified `-c` or `--check-db`, the script will check if the directory is already in the archive db and exit if it already exists.
-1.  The script will normally scan your current directory for files and archive everything. If you have large files in the directory and want to archive specific files, you can use `-f` or `--files`, one time for each file.
-1.  If you are not using screen or tmux, it will ask you if you want to quit and use either one.
-1.  If any unsaved changes exist in git tracked directories and have specified `-d` or `--delete` on the command line, it will show the status and ask if you want to quit to commit/push changes
-1.  It will show the archiving info and ask if you want to proceed with the process.
-1.  The script will generally compress files when making the tarball. If the files you are archiving are incompressible (already compressed), you can select `-u` or `--uncompressed` when calling the script.
-1.  After generating the tarball, it will confirm if you want to delete files if you have specified `-d` or `--delete` on the command line.
-    *  If you say yes, it will ask if you want to keep small files unless you have specified using `-k`/`--keep` or `-K`/`--keep-config`.
-1.  Before archiving, it will ask if you want to keep the tarball unless specified using `-t` or `--keep-tarball`. This is not recommended unless deleting files because it can as much as double space usage.
+1. If you have specified `-c` or `--check-db`, the script will check if the directory is already in the archive db and exit if it already exists.
+1. The script will normally scan your current directory for files and archive everything. If you have large files in the directory and want to archive specific files, you can use `-f` or `--files`, one time for each file.
+1. If you are not using screen or tmux, it will ask you if you want to quit and use either one.
+1. If any unsaved changes exist in git tracked directories and have specified `-d` or `--delete` on the command line, it will show the status and ask if you want to quit to commit/push changes
+1. It will show the archiving info and ask if you want to proceed with the process.
+2. The script will generally compress files when making the tarball. If the files you are archiving are incompressible (already compressed), you can select `-u` or `--uncompressed` when calling the script. You can also use `--squashfs uncompressed` to create an uncompressed squashfs archive, but it generally will not be faster.
+3. After generating the tarball, it will confirm if you want to delete files if you have specified `-d` or `--delete` on the command line.
+   * If you say yes, it will ask if you want to keep small files unless you have specified using `-k`/`--keep` or `-K`/`--keep-config`.
+4. Before archiving, it will ask if you want to keep the archive file unless specified using `-t` or `--keep-tarball`. This is not recommended unless deleting files because it can as much as double space usage.
 
 If there are errors during compression or archiving, the script will detect them and ask if you want to proceed, try again or cancel.
 
@@ -75,13 +80,18 @@ If there are errors during compression or archiving, the script will detect them
 
 `archive_goate_safe` is a version of the script that cannot delete files and can be used in batch mode without prompts. The unused options from `archive_goate` for file deletion are not provided:
 
-```
+```text
 Usage: archive_goate_safe [OPTIONS]
 
 Options:
   -t, --keep-tarball [yes|no|ask]
                                   Keep tarball after archiving
   -u, --uncompressed              Do not compress tarball with bzip2
+  -s, --squashfs [no|max|fast|uncompressed]
+                                  Use squashfs with maximum, fast, or without
+                                  lz4 (default is no squashfs)
+  -i, --inplace                   Create tarball in current directory instead
+                                  of temp directory
   -f, --files TEXT                Files to archive
   -c, --check-db                  Exit early if directory already archived in
                                   db
@@ -90,16 +100,36 @@ Options:
   --help                          Show this message and exit.
 ```
 
+### SquashFS archives
+
+By default, the script creates a bzip2-compressed tarball (`.tar.bz2`). You can instead create a [SquashFS](https://en.wikipedia.org/wiki/SquashFS) archive (`.sfs`) using the `-s`/`--squashfs` option. SquashFS supports random access to individual files without extracting the whole archive, which is useful for retrieving individual files from large datasets. It also is faster to compress.
+
+The compression level options are:
+
+* `fast` lz4 fast compression (64 cores)
+* `max` lz4 with high-compression (`-Xhc`) (64 cores). Uses a custom version with slightly lower compression if available.
+* `uncompressed` no compression (12 cores)
+
+### In-place archive creation
+
+By default, the archive is built in the user's scratch directory (`/sc/arion/scratch/<user>/archiving/`) to avoid temporarily doubling space usage in the project directory. You can use `-i`/`--inplace` to build the archive directly in the current directory instead if there is sufficient space. This prevents overhead from copying:
+
+```bash
+archive_goate --inplace
+```
+
+This is also available with `archive_goate_safe`.
+
 ### Small files
 
 You can choose to keep small files if you are deleting files while you archive. By default, the following files are kept:
 
-*  Logs ('.log', '.err', '.stderr', '.out', '.stdout') under 200 MiB
-*  Config files ('.yaml', '.yml', '.conf', '.json', '.ini') under 50 MiB
-*  Scripts ('.sh', '.r', '.rmd', '.smk', '.py') under 5 MiB
-*  Text and output files ('.txt', '.pdf', '.html', '.htm', '.org', '.md') under 100 MiB
-*  Images ('.tiff', '.png', '.jpg', '.svg') under 5 MiB
-*  Readme files ('.readme') under 10 MiB
+* Logs ('.log', '.err', '.stderr', '.out', '.stdout') under 200 MiB
+* Config files ('.yaml', '.yml', '.conf', '.json', '.ini') under 50 MiB
+* Scripts ('.sh', '.r', '.rmd', '.smk', '.py') under 5 MiB
+* Text and output files ('.txt', '.pdf', '.html', '.htm', '.org', '.md') under 100 MiB
+* Images ('.tiff', '.png', '.jpg', '.svg') under 5 MiB
+* Readme files ('.readme') under 10 MiB
 
 You can override those settings by using a yaml file specified like `--keep-config archive.yaml` in the directory with the following format:
 
@@ -168,7 +198,7 @@ Once you have finished running this sample script, you can use another loop or t
 
 To use the archiving script in snakemake, the `archive_snakemake.py` script is provided in this repo. You must use snakemake with the local profile or as a localrule (not on the lsf cluster), and `archive_goate` must be in your environment. An archiving rule looks like this:
 
-```
+```snakemake
 rule archive_files:
     input:
         archive = [list of files to be archived],
@@ -197,10 +227,13 @@ DELETE = False
 KEEP = "none"
 SAFE = True
 COMPRESS = True
+SQUASHFS = "no"  # or "fast", "max", "uncompressed"
+INPLACE = False
 
 directory_norm = os.path.normpath(DIRECTORY)
 
 archive_goate.archive(DELETE, KEEP, safe=SAFE, batch=True,
                       files=FILES, directory=directory_norm,
-                      compression=COMPRESS)
+                      compression=COMPRESS, squashfs=SQUASHFS,
+                      inplace=INPLACE)
 ```

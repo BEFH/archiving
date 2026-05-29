@@ -34,7 +34,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '6.2'
+__version__ = '7.0'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -277,7 +277,7 @@ def question(text, default=None, prepend='', batch=False, default_batch=None):
 
 
 def load_config(configfile):
-    if os.path.isfile(configfile):
+    if configfile and os.path.isfile(configfile):
         import yaml
         with open(configfile, 'r') as conf:
             settings = yaml.safe_load(conf)
@@ -300,7 +300,7 @@ def load_config(configfile):
     return settings
 
 
-def scantree(path, settings=load_config(False)):
+def scantree(path, settings=load_config(None)):
     '''Recursively yield DirEntry objects for given directory.'''
     for entry in os.scandir(path):
         if entry.is_dir(follow_symlinks=False):
@@ -311,7 +311,7 @@ def scantree(path, settings=load_config(False)):
             yield getinfo(entry, settings)
 
 
-def scanfiles(paths='.', settings=load_config(False)):
+def scanfiles(paths='.', settings=load_config(None)):
     '''Recursively yield DirEntry objects for given directories and files.'''
     if type(paths) is str:
         paths = [paths]
@@ -324,7 +324,7 @@ def scanfiles(paths='.', settings=load_config(False)):
         else:
             yield getinfo(path, settings)
 
-def list_files(path='.', settings=load_config(False)):
+def list_files(path='.', settings=load_config(None)):
     files = [x for x in scanfiles(path, settings) if x is not None]
     files = pd.DataFrame.from_records(files)
     files['user'] = [pwd.getpwuid(int(x))[0]
@@ -429,9 +429,15 @@ def exit_code(logname, run=1):
     return 0
 
 
-def make_tarball(files, total, batch=False, wdir='.',
+def make_archfile(files, total, batch=False, wdir='.',
                  date_time=None, fname_xtra=None,
-                 indiv_files=False, compression=True):
+                 indiv_files=False, compression=True,
+                 inplace=False, squashfs='no'):
+    if squashfs == "no":
+        squashfs = False
+    else:
+        compression = squashfs
+        squashfs = True
     if wdir == '.':
         wdir = os.getcwd()
     fullpath = os.path.normpath(wdir)
@@ -449,42 +455,57 @@ def make_tarball(files, total, batch=False, wdir='.',
     files['archive_id'] = hash_dtd
     dt = date_time if date_time else date
     dte = f'{fname_xtra}_{dt}' if fname_xtra else dt
-    tarball = f'{cwd}_{dte}.tar.bz2' if compression else f'{cwd}_{dte}.tar'
+    ext = "sfs" if squashfs else ("tar.bz2" if compression else "tar")
+    temp_arcfile = f'{cwd}_{dte}.{ext}'
     username = getpass.getuser()
 
     archive_info = {
         'archive_id': hash_dtd,
         'user_name': username,
         'time': dt_current,
-        'archive_name': tarball,
+        'archive_name': temp_arcfile,
         'archive_directory': fullpath,
         'total_mib': total
         }
 
-
-    jobname = f'{cwd}_{dte}.tarball'
-    oo = f'{jobname}.stdout'
-    eo = f'{jobname}.stderr'
-
-    if indiv_files:
-        file_list = [os.path.join(cwd, x) for x in files['path']]
-        tar_list = ' '.join(file_list)
-    else:
-        tar_list = cwd
-
     tempdir = '/sc/arion/scratch/{}/archiving'.format(username)
+    tempdir_path = pathlib.Path(tempdir)
+    pathlib.Path.mkdir(tempdir_path, parents=True, exist_ok=True)
 
+    if inplace:
+        temp_arcfile = temp_arcfile
+    else:
+        temp_arcfile = '{}/{}'.format(tempdir, temp_arcfile)
+
+    jobstem = f'{cwd}_{dte}'
+
+    if squashfs:
+        wd_use = fullpath
+        arcfunc = make_squashfs
+    else:
+        wd_use = cwd
+        arcfunc = make_tarball
+    if indiv_files:
+        file_list_ = [os.path.join(wd_use, x) for x in files['path']]
+        file_list = ' '.join(file_list_)
+    else:
+        file_list = wd_use  
+    arcfunc(file_list, temp_arcfile, jobstem, compression, batch, parent)
+
+    return archive_info, temp_arcfile
+
+def make_tarball(file_list, temp_arcfile, jobstem, compression, batch, parent):
+    jobname = f'{jobstem}.tarball'
     newtar = test_tar()
 
-    temp_tarball = '{}/{}'.format(tempdir, tarball)
     if compression:
-        tar_cmd = 'tar -cvpjf {} -C {} {}'.format(temp_tarball, parent, tar_list)
+        tar_cmd = 'tar -cvpjf {} -C {} {}'.format(temp_arcfile, parent, file_list)
         tar_cmd_fast = 'tar c -I"pbzip2 -p24" -f {} -C {} --xattrs {}'
-        tar_cmd_fast = tar_cmd_fast.format(temp_tarball, parent, tar_list)
+        tar_cmd_fast = tar_cmd_fast.format(temp_arcfile, parent, file_list)
     elif newtar:
-        tar_cmd = f'tar -cvpf {temp_tarball} -C {parent} --xattrs {tar_list}'
+        tar_cmd = f'tar -cvpf {temp_arcfile} -C {parent} --xattrs {file_list}'
     else:
-        tar_cmd = f'tar -cvpf {temp_tarball} -C {parent} {tar_list}'
+        tar_cmd = f'tar -cvpf {temp_arcfile} -C {parent} {file_list}'
 
     try:
         not_used = subprocess.run(["pbzip2", "-h"], capture_output=True)
@@ -518,15 +539,49 @@ def make_tarball(files, total, batch=False, wdir='.',
         logging.warning("pbzip2 is missing and tar is older than 1.28.")
         logging.warning("Using slow serial compression.")
 
-    job_cmd = ('bsub -P acc_LOAD -q premium -n {} -R rusage[mem=1000] '
-               + '''-R span[hosts=1] -W 140:00 -J {} -oo {} -eo {} '{}' ''')
-    job_cmd = job_cmd.format(ncore, jobname, oo, eo, tar_cmd)
-    tempdir_path = pathlib.Path(tempdir)
-    pathlib.Path.mkdir(tempdir_path, parents=True, exist_ok=True)
-    tar_incomplete = True
-    tar_attempt = 1
+    submit_arcjob(tar_cmd, jobname, ncore, temp_arcfile,
+                  batch, kind='Tar', attempts = 4)
 
-    while tar_incomplete and tar_attempt < 4:
+    return temp_arcfile
+
+def make_squashfs(file_list, temp_arcfile, jobstem, compression, batch, parent):
+    jobname = f'{jobstem}.squashfs'
+    if compression in [True, "fast"]:
+        extra_args = '-comp lz4 -b 1M -processors 64 -block-readers 32'
+        ncore = 64
+    elif compression == "max":
+        extra_args = '-comp lz4 -b 1M -processors 64 -block-readers 32 -Xhc'
+        ncore = 64
+    else:
+        extra_args = '-no-compression -b 1M -processors 12'
+        ncore = 12
+    mksquashfs_exe = "/sc/arion/projects/load/etc/packages/squashfs-tools/4.7.5_lvl7/bin/mksquashfs"
+    if not os.path.isfile(mksquashfs_exe):
+        logging.warning(f"mksquashfs executable not found at {mksquashfs_exe}")
+        mksquashfs_exe = "mksquashfs"
+        logging.warning("Falling back to mksquashfs in $PATH")
+    mksquashfs_cmd = f'{mksquashfs_exe} {file_list} {temp_arcfile} {extra_args}'
+    submit_arcjob(mksquashfs_cmd, jobname, ncore, temp_arcfile,
+                  batch, kind='SquashFS', attempts = 2, mem=4000)
+    
+
+def submit_arcjob(arc_cmd, jobname, ncore, temp_arcfile,
+                   batch=False, kind='Tar', attempts = 4,
+                   mem=1000):
+    oo = f'{jobname}.stdout'
+    eo = f'{jobname}.stderr'
+    job_cmd = ('bsub -P acc_LOAD -q premium -n {} -R rusage[mem={}] '
+               + '''-R span[hosts=1] -W 140:00 -J {} -oo {} -eo {} '{}' ''')
+    job_cmd = job_cmd.format(ncore, mem, jobname, oo, eo, arc_cmd)
+
+    arc_incomplete = True
+    arc_attempt = 1
+
+    while arc_incomplete and (attempts == 1 or arc_attempt <= attempts):
+        if arc_attempt > 1 and kind == 'SquashFS':
+            logging.warning(f"Deleting incomplete archive file {temp_arcfile} before retrying.")
+            if os.path.exists(temp_arcfile):
+                os.remove(temp_arcfile)
         archive_job = subprocess.run(job_cmd, capture_output=True, shell=True)
         print(archive_job.stdout.decode())
         print(archive_job.stderr.decode())
@@ -557,61 +612,59 @@ def make_tarball(files, total, batch=False, wdir='.',
                 statmsg = "Waiting for bjobs... {}".format(next(spinner))
                 print(statmsg, end='\r', flush=True)
             elif jobstat == 'PEND':
-                statmsg = "Tar job is pending... {}".format(next(spinner))
+                statmsg = f"{kind} job is pending... {next(spinner)}"
                 print(statmsg, end='\r', flush=True)
             elif jobstat == 'RUN':
-                statmsg = "Tar job is running... {}".format(next(spinner))
+                statmsg = f"{kind} job is running... {next(spinner)}"
                 print(statmsg, end='\r', flush=True)
             else:
-                statmsg = "Tar job has completed.   "
+                statmsg = f"{kind} job has completed.   "
                 print(statmsg, end='\n')
             completed = jobstat not in {'RUN', 'PEND'}
 
-        tar_code = exit_code(oo)
-        if jobstat != 'EXIT' and tar_code == 0:
-            tar_incomplete = False
+        arc_code = exit_code(oo)
+        if jobstat != 'EXIT' and arc_code == 0:
+            arc_incomplete = False
             break
         elif jobstat == 'EXIT':
             logging.warning(
-                'LSF archive job failed on attempt {}'.format(tar_attempt))
-            print('LSF archive job failed on attempt {}'.format(tar_attempt))
-            if tar_attempt < 3:
-                print('Trying again up to {} times'.format(3 - tar_attempt))
+                f'LSF archive job failed on attempt {arc_attempt}')
+            print(f'LSF archive job failed on attempt {arc_attempt}')
+            if arc_attempt < attempts:
+                print(f'Trying again up to {attempts - arc_attempt} times')
             else:
-                logging.error('Aborting because LSF tar job failed.')
-                raise Exception('Aborting because LSF tar job failed.')
-            tar_attempt += 1
-        else:
+                logging.error(f'Aborting because LSF {kind.lower()} job failed.')
+                raise Exception(f'Aborting because LSF {kind.lower()} job failed.')
+            arc_attempt += 1
+        elif kind == 'Tar':
             logging.warning(
-                'tar exited with exit code {} on attempt {}'.format(
-                    tar_code, tar_attempt))
-            print('tar exited with exit code {} on attempt {}'.format(
-                    tar_code, tar_attempt))
-            if tar_code == 1:
+                f'{kind.lower()} exited with exit code {arc_code} on attempt {arc_attempt}')
+            print(f'{kind.lower()} exited with exit code {arc_code} on attempt {arc_attempt}')
+            if arc_code == 1:
                 print('The following files were unsuccessful:')
                 with open(eo, 'r') as f:
                     print(f.read(), end='\n')
                 if not batch:
                     print('You can choose to try again, to use this archive,'
                           + '\n or to abort all operations.')
-                if tar_attempt < 3 and question('Try again?', True, batch=batch):
+                if arc_attempt < attempts and question('Try again?', True, batch=batch):
                     print('Trying archiving again.')
                     logging.warning('Trying archiving again.')
-                    tar_attempt += 1
+                    arc_attempt += 1
                 elif batch:
-                    logging.error('Aborting because tar is incomplete in batch mode.')
-                    os.remove(temp_tarball)
-                    raise Exception('Aborting because tar is incomplete.')
+                    logging.error(f'Aborting because {kind.lower()} is incomplete in batch mode.')
+                    os.remove(temp_arcfile)
+                    raise Exception(f'Aborting because {kind.lower()} is incomplete.')
                 elif question('Continue with incomplete archive?'):
                     logging.warning('Continuing with incomplete archive.')
                     print('WARNING: Continuing with incomplete archive.')
                     break
                 else:
-                    logging.error('Aborting because tar is incomplete.')
-                    os.remove(temp_tarball)
-                    raise Exception('Aborting because tar is incomplete.')
+                    logging.error(f'Aborting because {kind.lower()} is incomplete.')
+                    os.remove(temp_arcfile)
+                    raise Exception(f'Aborting because {kind.lower()} is incomplete.')
             else:
-                retry = tar_attempt < 3
+                retry = arc_attempt < attempts
                 if batch:
                     logging.warning('Archiving failed.')
                 else:
@@ -622,10 +675,9 @@ def make_tarball(files, total, batch=False, wdir='.',
                     print('Trying archiving again.')
                     logging.warning('Trying archiving again.')
                 else:
-                    logging.error('Aborting because tar failed.')
-                    raise Exception('Aborting because tar failed.')
-            tar_attempt += 1
-    return archive_info, temp_tarball
+                    logging.error(f'Aborting because {kind.lower()} failed.')
+                    raise Exception(f'Aborting because {kind.lower()} failed.')
+            arc_attempt += 1
 
 
 def filehash(file, date):
@@ -737,7 +789,7 @@ def delete_no_files(files, archive_info, sizes):
 def tsm_archive(temp_tarball, archive_info, files=None, attempt=1,
                 keep_tar=False, batch=False, ans_codes=[], logname=None):
     archive_name = archive_info['archive_name']
-    if attempt == 1:
+    if attempt == 1 and str(temp_tarball) != str(archive_name):
         logging.info('Moving archive tarball')
         print('Moving archive tarball')
         shutil.copy(temp_tarball, archive_name)
@@ -1009,6 +1061,12 @@ main_opts = {
         type=click.Choice(['yes', 'no', 'ask'], case_sensitive=False),
         default='ask',
         help='Keep tarball after archiving'),
+    's': click.option('-s', '--squashfs',
+        type=click.Choice(['no', 'max', 'fast', 'uncompressed'], case_sensitive=False),
+        default='no',
+        help='Use squashfs with maximum, fast, or without lz4 (default is no squashfs)'),
+    'i': click.option('-i', '--inplace', is_flag=True, default=False,
+        help='Create tarball in current directory instead of temp directory'),
     'u': click.option('-u', '--uncompressed', is_flag=True, default=False,
         help='Do not compress tarball with bzip2'),
     'f': click.option('-f', '--files', multiple=True,
@@ -1025,7 +1083,7 @@ def main_opt_get(k):
 # Template for all command line usage
 def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
             safe=False, batch=False, directory=".", files=None,
-            compression=True, check_db=False):
+            compression=True, check_db=False, squashfs='no', inplace=False):
     goateuser = "goatea01a" in {g.gr_name for g in grp.getgrall() if os.getlogin() in g.gr_mem}
     if not goateuser:
         raise PermissionError("This script is for the Goate Lab only!")
@@ -1094,7 +1152,7 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
     elif keep_config:
         settings = load_config(keep_config)
     else:
-        settings = load_config(False)
+        settings = load_config(None)
 
     creds = '/sc/arion/projects/LOAD/archive/archive_creds.json'
     if check_db and check_archived(creds, directory):
@@ -1141,12 +1199,14 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
     log_sz, sizes = get_sizes(files, delete)
 
     if batch or question('Archive this folder:\n{}?'.format(os.getcwd())):
-        archive_info, temp_tarball = make_tarball(files, sizes['total'], batch,
-                                                  date_time=logtime,
-                                                  fname_xtra=fname_extra,
-                                                  wdir=dir_archive,
-                                                  indiv_files=individual_files,
-                                                  compression=compression)
+        archive_info, temp_tarball = make_archfile(files, sizes['total'], batch,
+                                                   date_time=logtime,
+                                                   fname_xtra=fname_extra,
+                                                   wdir=dir_archive,
+                                                   indiv_files=individual_files,
+                                                   compression=compression,
+                                                   squashfs=squashfs,
+                                                   inplace=inplace)
         if delete == True:
             files, archive_info = delete_files(files, archive_info, sizes,
                                                log_sz, keep, batch=batch,
@@ -1189,10 +1249,12 @@ def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
 @main_opt_get('u')
 @main_opt_get('f')
 @main_opt_get('c')
-def main(delete, keep, keep_config, keep_tarball, uncompressed, files, check_db):
+@main_opt_get('s')
+@main_opt_get('i')
+def main(delete, keep, keep_config, keep_tarball, uncompressed, files, check_db, squashfs, inplace):
     sys.stdout.reconfigure(line_buffering=True)
     archive(delete, keep, keep_config, keep_tarball, compression=(not uncompressed),
-            files=files, check_db=check_db)
+            files=files, check_db=check_db, squashfs=squashfs, inplace=inplace)
 
 @click.command()
 @main_opt_get('t')
@@ -1200,10 +1262,12 @@ def main(delete, keep, keep_config, keep_tarball, uncompressed, files, check_db)
 @main_opt_get('f')
 @main_opt_get('b')
 @main_opt_get('c')
-def safe(keep_tarball, uncompressed, files, batch, check_db):
+@main_opt_get('s')
+@main_opt_get('i')
+def safe(keep_tarball, uncompressed, files, batch, check_db, squashfs, inplace):
     sys.stdout.reconfigure(line_buffering=True)
     archive(False, 'default', None, keep_tarball, True, batch, compression=(not uncompressed),
-            files=files, check_db=check_db)
+            files=files, check_db=check_db, squashfs=squashfs, inplace=inplace)
 
 if __name__ == '__main__':
     main()

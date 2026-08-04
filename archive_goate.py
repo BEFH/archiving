@@ -34,7 +34,7 @@ import pandas as pd
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
 
-__version__ = '7.0'
+__version__ = '7.1'
 
 def get_type(ext, size, settings):
     types = settings['types']
@@ -916,7 +916,7 @@ def write_database(creds: str, files: pd.DataFrame, archive_info: dict):
         'archive_id': types.String(16),
         'filename': types.String(255),
         'path': types.String(1000),
-        'extension': types.String(64),
+        'extension': types.String(128),
         'kind': types.String(15),
         'kept': types.String(15),
         'directory': types.Boolean,

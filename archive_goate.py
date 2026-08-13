@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Archiving script Version 6.2
+# Archiving script Version 7.1
 
 # stdlib
 import os
@@ -13,23 +13,21 @@ import re
 import datetime
 import time
 import hashlib
-import sqlite3
 import getpass
 import pickle
 import pwd
-import grp
 import shutil
 import logging
 import psutil
 import json
-from itertools import compress, cycle
-from sqlalchemy import create_engine, types, text, bindparam
-from sqlalchemy.exc import SQLAlchemyError
 
 # packages
 import pytz
 import click
 import pandas as pd
+from itertools import compress, cycle
+from sqlalchemy import create_engine, types, text, bindparam
+from sqlalchemy.exc import SQLAlchemyError
 
 
 logtime = datetime.datetime.now().strftime('%d-%b-%Y_%H.%M')
@@ -555,6 +553,7 @@ def make_squashfs(file_list, temp_arcfile, jobstem, compression, batch, parent):
     else:
         extra_args = '-no-compression -b 1M -processors 12'
         ncore = 12
+    extra_args += f" -mem {ncore * 4000 - 1000}M"
     mksquashfs_exe = "/sc/arion/projects/load/etc/packages/squashfs-tools/4.7.5_lvl7/bin/mksquashfs"
     if not os.path.isfile(mksquashfs_exe):
         logging.warning(f"mksquashfs executable not found at {mksquashfs_exe}")
@@ -953,7 +952,8 @@ def write_database(creds: str, files: pd.DataFrame, archive_info: dict):
                               index=False, dtype=ARCHIVE_DTYPE)
             files.rename(columns=mappings).to_sql(
                 'file', con=conn, if_exists='append',
-                index=False, dtype=FILES_DTYPE)
+                index=False, dtype=FILES_DTYPE,
+                chunksize=50000)
     except SQLAlchemyError as e:
         # Dump for debugging
         with open('archive_dump.p', 'wb') as pklh:
@@ -1084,7 +1084,8 @@ def main_opt_get(k):
 def archive(delete, keep="ask", keep_config=None, keep_tarball="no",
             safe=False, batch=False, directory=".", files=None,
             compression=True, check_db=False, squashfs='no', inplace=False):
-    goateuser = "goatea01a" in {g.gr_name for g in grp.getgrall() if os.getlogin() in g.gr_mem}
+    user_grps = {g.gr_name for g in grp.getgrall() if os.getlogin() in g.gr_mem}
+    goateuser = "goatea01a" in user_grps or "LOAD" in user_grps 
     if not goateuser:
         raise PermissionError("This script is for the Goate Lab only!")
     files = files if files else None
